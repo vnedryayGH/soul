@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  lint-and-types:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy
+          if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
+      - name: Ruff Lint
+        run: |
+          ruff check backend || (echo "Ruff found issues" && exit 1)
+      - name: Ruff Format
+        run: |
+          ruff format --check backend
+      - name: Mypy Types
+        run: |
+          mypy --config-file pyproject.toml backend || (echo "Mypy errors" && exit 1)
+
+  backend-schema-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+      - name: Run Schema Guard
+        run: |
+          python -m backend.scripts.ci_schema_guard --snapshot backend/schema/abi_contracts_v1.json --mode ci
+
+  hyperloop-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Hyperloop smoke (TRACE & Inspectors)
+        env:
+          API_BASE: https://mini.soulpulse.art/api
+          TG_ID: '468326902'
+        run: |
+          python backend/scripts/test_p44_auth_suite.py || exit 1
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install deps
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+

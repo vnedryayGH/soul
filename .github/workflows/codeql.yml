@@ -1,0 +1,11 @@
+name: CodeQL (disabled until org allows GitHub actions)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  security-events: write
+jobs:
+  note:
+    runs-on: [self-hosted, linux]
+    steps:
+      - run: echo "CodeQL temporarily disabled due to organization action policy. Enable GitHub actions allow-list to proceed."

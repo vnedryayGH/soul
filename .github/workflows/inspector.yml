@@ -1,0 +1,152 @@
+name: Inspector & Canonical Guard
+
+on:
+  pull_request:
+    branches: [ "**" ]
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Guard canonical URLs and run inspectors
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Show runner info
+        run: |
+          echo "RUNNER_NAME=$RUNNER_NAME"; echo "RUNNER_OS=$RUNNER_OS"; echo "RUNNER_ARCH=$RUNNER_ARCH"
+          uname -a; whoami; pwd
+
+      - name: Clone repository (no marketplace actions)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          rm -rf repo && mkdir -p repo
+          git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git" repo
+          cd repo
+          git fetch --depth=1 origin ${SHA} || true
+          git checkout -q ${SHA}
+
+      - name: Local canonical guard (grep-based)
+        working-directory: repo
+        run: |
+          set -e
+          echo "Scanning banned patterns in backend/app"
+          MATCHES=$(grep -RInE 'http://|https://|:[0-9]{2,5}\b|mini\.soulpulse\.art|127\.0\.0\.1|grafana|telegram' backend/app/ 2>/dev/null | wc -l || true)
+          if [ "${MATCHES}" -gt 0 ]; then
+            echo "Found ${MATCHES} banned pattern matches in backend/app" >&2
+            grep -RInE 'http://|https://|:[0-9]{2,5}\b|mini\.soulpulse\.art|127\.0\.0\.1|grafana|telegram' backend/app/ | head -200 || true
+            exit 1
+          fi
+          echo "No banned patterns found."
+
+      - name: Hyperloop Inspector (best-effort)
+        working-directory: repo
+        env:
+          SOUL_API_BASE_URL: ${{ secrets.SOUL_API_BASE_URL }}
+          SOUL_TG_USER_ID: ${{ secrets.SOUL_TG_USER_ID }}
+        run: |
+          set +e
+          PY=python3; command -v python3 >/dev/null 2>&1 || PY=python
+          $PY -m pip --version >/dev/null 2>&1 || true
+          $PY Soul/scripts/hyperloop_cli.py --preflight || true
+          $PY Soul/scripts/hyperloop_cli.py --dsl "INSPECTOR.RUN key=guard.canonical.urls" --timeout 25 || true
+          $PY Soul/scripts/hyperloop_cli.py --dsl "INSPECTOR.RUN_ALL" --timeout 60 || true
+
+  baseline-gate:
+    name: Baseline Gate (backend/frontend/schema drift)
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 20
+    steps:
+      - name: Show runner info
+        run: |
+          echo "RUNNER_NAME=$RUNNER_NAME"; echo "RUNNER_OS=$RUNNER_OS"; echo "RUNNER_ARCH=$RUNNER_ARCH"
+          uname -a; whoami; pwd
+
+      - name: Clone repository (no marketplace actions)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          rm -rf repo && mkdir -p repo
+          git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git" repo
+          cd repo
+          git fetch --depth=1 origin ${SHA} || true
+          git checkout -q ${SHA}
+
+      - name: Run baseline inspectors via Hyperloop CLI
+        working-directory: repo
+        env:
+          SOUL_API_BASE_URL: ${{ secrets.SOUL_API_BASE_URL }}
+          SOUL_TG_USER_ID: ${{ secrets.SOUL_TG_USER_ID }}
+        run: |
+          set -e
+          PY=python3; command -v python3 >/dev/null 2>&1 || PY=python
+          mkdir -p reports
+          $PY Soul/scripts/hyperloop_cli.py --dsl "INSPECTOR.RUN key=guard.backend.baseline" --timeout 120 > reports/baseline_backend.json
+          $PY Soul/scripts/hyperloop_cli.py --dsl "INSPECTOR.RUN key=guard.frontend.baseline" --timeout 120 > reports/baseline_frontend.json
+          $PY Soul/scripts/hyperloop_cli.py --dsl "INSPECTOR.RUN key=schema.drift" --timeout 120 > reports/baseline_schema_drift.json
+
+      - name: Validate inspector statuses (fail if not passed/ok)
+        working-directory: repo
+        run: |
+          set -e
+          command -v jq >/dev/null 2>&1 || { echo "jq is required" >&2; exit 1; }
+          check() {
+            f="$1"
+            statuses=$(jq -r '[.results[] | (.data.status // .status // empty) | ascii_downcase] | join(",")' "$f")
+            if [ -z "$statuses" ]; then
+              echo "$f: No statuses found" >&2
+              exit 1
+            fi
+            bad=$(jq -r '[.results[] | (.data.status // .status // empty) | ascii_downcase | select(. != "ok" and . != "passed")] | length' "$f")
+            if [ "$bad" -ne 0 ]; then
+              echo "$f: FAIL ($statuses)" >&2
+              exit 1
+            else
+              echo "$f: OK ($statuses)"
+            fi
+          }
+          check reports/baseline_backend.json
+          check reports/baseline_frontend.json
+          check reports/baseline_schema_drift.json
+
+      - name: Upload baseline reports (timestamped)
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-inspectors-${{ github.run_id }}-${{ github.sha }}-${{ github.run_attempt }}-${{ github.event_name }}
+          path: repo/reports/*.json
+          retention-days: 14
+
+  postmerge-smoke:
+    name: Post-merge smoke (health + RUN_ALL)
+    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master')
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 10
+    steps:
+      - name: Clone repository (no marketplace actions)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          rm -rf repo && mkdir -p repo
+          git clone --depth=1 "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git" repo
+          cd repo
+          git fetch --depth=1 origin ${SHA} || true
+          git checkout -q ${SHA}
+      - name: Health and RUN_ALL
+        env:
+          H: ${{ secrets.SOUL_TG_USER_ID }}
+        run: |
+          set -e
+          curl -s -S -H "X-Telegram-User-ID: ${H}" ${{ secrets.SOUL_API_BASE_URL }}/health | jq . || true
+          cd repo
+          python3 Soul/scripts/hyperloop_cli.py --dsl "INSPECTOR.RUN_ALL scope=*" --timeout 60
