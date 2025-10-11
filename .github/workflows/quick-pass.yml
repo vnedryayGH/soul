@@ -1,0 +1,10 @@
+name: Quick Pass
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo OK
