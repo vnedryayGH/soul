@@ -27,3 +27,15 @@ groups:
             p95 времени проверки Dev Access health превышает 500мс в течение 5 минут.
             Действия: проверить БД/FS доступность, блокировки, импорт модулей; оптимизировать проверки инспектора.
 
+      - alert: DevAccessEndpointNotFound
+        expr: increase(http_requests_total{handler="/api/admin/access/health",status="404"}[5m]) > 0
+        for: 3m
+        labels:
+          severity: warning
+          risk: medium
+        annotations:
+          summary: "Dev Access 404 — endpoint не найден"
+          description: |
+            404 на /api/admin/access/health. Действия: проверить регистрацию роутера dev_access_admin в backend/app/main.py,
+            перезагрузить сервис systemd, убедиться в корректной сборке и деплое.
+
