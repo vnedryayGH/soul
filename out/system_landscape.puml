@@ -1,0 +1,41 @@
+@startuml
+!theme plain
+title Component Landscape — Принципиальная схема
+component "Users\nHuman" as users
+component "Telegram Platform\nWebhook" as tg
+component "Mini Chat App\nUI" as mini_chat
+component "Frontend Mini-App\nUI" as frontend
+component "Nginx Edge\nProxy" as nginx
+component "Backend FastAPI\nAPI" as backend
+component "Processor Core\nPipeline" as processor
+component "Aux LLM Proxy\nLLM" as aux
+component "LLM Providers\nLLM" as llm
+component "RS Proxy\nRS" as rs_proxy
+component "RS Bus\nUDS" as rsbus
+component "RS Actors\nRust" as rs_actors
+component "Postgres DB\nPG + pgcrypto" as db
+component "AGE Graph\nExt" as age
+component "Inspectors\nP40/P27" as inspectors
+component "Incidents\nP50" as inc
+component "Prometheus\nMetrics" as prom
+component "Grafana\nDashboards" as graf
+users --> tg : messages
+tg --> nginx : webhook
+users --> mini_chat : ui
+mini_chat --> nginx : requests
+frontend --> nginx : api
+nginx --> backend : proxy
+backend --> processor : dispatch
+processor --> rs_proxy : heavy ops
+rs_proxy --> rsbus : forward
+rsbus --> rs_actors : route
+processor --> age : graph ops
+age --> db : ext
+backend --> db : sql
+backend --> aux : llm proxy
+aux --> llm : llm
+backend --> inspectors : checks
+backend --> inc : incident
+backend --> prom : metrics
+prom --> graf : visualize
+@enduml

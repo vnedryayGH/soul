@@ -1,0 +1,8 @@
+{"phase": "A", "type": "planner", "idx": 1, "text": "Составь короткий план дня: работа и спорт", "ok": false, "latency_ms_client": 65123, "error": "The read operation timed out"}
+{"phase": "A", "type": "planner", "idx": 2, "text": "План по проекту: дизайн, код, тесты", "ok": false, "latency_ms_client": 65037, "error": "The read operation timed out"}
+{"phase": "A", "type": "planner", "idx": 3, "text": "План обучения: Python и SQL", "ok": false, "latency_ms_client": 65038, "error": "The read operation timed out"}
+{"phase": "A", "type": "planner", "idx": 4, "text": "План выходного: прогулка и чтение", "ok": false, "latency_ms_client": 65055, "error": "The read operation timed out"}
+{"phase": "A", "type": "planner", "idx": 5, "text": "План путешествия: Санкт-Петербург на 2 дня", "ok": false, "latency_ms_client": 122, "error": "{\"detail\":\"Отсутствует право: soul.admin\"}"}
+{"phase": "A", "type": "translator", "idx": 1, "text": "Переведи на английский: Привет, как дела?", "ok": false, "latency_ms_client": 65060, "error": "The read operation timed out"}
+{"phase": "A", "type": "translator", "idx": 2, "text": "Переведи на английский: Сегодня хорошая погода.", "ok": false, "latency_ms_client": 65055, "error": "The read operation timed out"}
+{"phase": "A", "type": "translator", "idx": 3, "text": "Переведи на английский: Я занят, напишу позже.", "ok": false, "latency_ms_client": 65041, "error": "The read operation timed out"}

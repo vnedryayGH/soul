@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ru" class="sp-theme-dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>SoulPulse Mini v2.1</title>
+    <meta name="version" content="2.1-20250109">
+    <!-- Favicon (устойчиво к кешу) -->
+    <link rel="icon" href="/favicon.ico?v=4" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=4" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=4" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png?v=5" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/android-chrome-512x512.png?v=5" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=4" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="shortcut icon" href="/favicon.ico?v=4" />
+    <!-- Анти-FOUC: скрываем до готовности -->
+    <style>
+      html:not(.sp-ready) body { opacity: 0; }
+      html.sp-ready body { opacity: 1; transition: opacity 200ms ease; }
+    </style>
+    <!-- Стили подключаются через сборку Vite (импорты в main.tsx) -->
+    <script type="module" crossorigin src="/assets/index-B4P9h-k1.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/react-DAIzMmXQ.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-CuyH01uu.css">
+  </head>
+  <body class="sp-platform-container">
+    <script>
+      // Быстрый прелоад-скрипт: выставляем платформенный класс и снимаем скрытие
+      (function(){
+        try{
+          var w = window;
+          var wa = w.Telegram && w.Telegram.WebApp;
+          var hasInit = !!(wa && typeof wa.initData === 'string' && wa.initData.length);
+          var hasUser = !!(wa && wa.initDataUnsafe && wa.initDataUnsafe.user && wa.initDataUnsafe.user.id);
+          if (wa && (hasInit || hasUser)) { document.body.classList.add('telegram-mini-app'); }
+          document.documentElement.classList.add('sp-ready');
+          // Метка сборки для DIAG и бейджа
+          try { (window).__SP_BUILD__ = String(Date.now()); } catch(e){}
+        }catch(e){}
+      })();
+    </script>
+    <script>
+      // Перенаправление «чистых» путей в hash-маршруты для HashRouter
+      (function(){
+        try{
+          if (!window.location.hash) {
+            var p = window.location && (window.location.pathname || '');
+            if (p && p !== '/' && p.indexOf('/api') !== 0 && p.indexOf('/assets') !== 0) {
+              var u = new URL(window.location.href);
+              var q = u.search || '';
+              u.hash = '#' + p + q;
+              u.pathname = '/';
+              u.search = '';
+              window.location.replace(u.toString());
+            }
+          }
+        }catch(_){ }
+      })();
+    </script>
+    <script>
+      // Ранний WEB-гард отключён: по умолчанию показываем мини-страницу (внутри App)
+      // Дополнительно: если уже на /webauth — ничего не делаем (анти-петля)
+      (function(){
+        try{
+          var path = window.location && window.location.pathname || '';
+          if (path && path.indexOf('/webauth') === 0) { return; }
+          // Ничего не делаем: App сам решит что показать (мини-страницу или основной UI)
+        }catch(e){}
+      })();
+    </script>
+    <script>
+      // РАННИЙ перехватчик критических ошибок: единичный перезапуск с cache-bust ТОЛЬКО для ошибок загрузки чанков
+      (function(){
+        try{
+          var tried = null;
+          try{ tried = sessionStorage.getItem('sp_boot_retry'); }catch(e){}
+          function reloadOnce(){
+            try{ if(!sessionStorage.getItem('sp_boot_retry')) sessionStorage.setItem('sp_boot_retry','1'); }catch(e){}
+            try{ var u = new URL(window.location.href); u.searchParams.set('_r', Date.now().toString()); window.location.replace(u.toString()); }catch(e){}
+          }
+          function shouldRetry(msg){
+            if(!msg) return false;
+            var s = String(msg);
+            return (
+              s.indexOf('ChunkLoadError') >= 0 ||
+              s.indexOf('Loading chunk') >= 0 ||
+              s.indexOf('Failed to fetch dynamically imported module') >= 0
+            );
+          }
+          window.addEventListener('error', function(e){
+            try{
+              var m = e && (e.message || e.error || '');
+              if(!tried && shouldRetry(m)) reloadOnce();
+            }catch(_){ }
+          });
+          window.addEventListener('unhandledrejection', function(e){
+            try{
+              var m = e && (e.reason && (e.reason.message || e.reason)) || '';
+              if(!tried && shouldRetry(m)) reloadOnce();
+            }catch(_){ }
+          });
+        }catch(_){ }
+      })();
+    </script>
+    <div id="root"></div>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  </body>
+</html>

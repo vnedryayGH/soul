@@ -1,0 +1,17 @@
+[Unit]
+Description=SoulPulse Telegram Polling Bot
+After=network.target soulpulse-backend.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/soulpulse/backend
+EnvironmentFile=/var/www/soulpulse/backend/.env
+ExecStart=/var/www/soulpulse/backend/venv/bin/python /var/www/soulpulse/backend/test_polling_bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

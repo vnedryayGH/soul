@@ -1,0 +1,41 @@
+@startuml
+!theme plain
+title Core Kernel — Принципиальная схема
+component "Nginx Edge Proxy\nreverse proxy" as nginx
+component "Backend FastAPI App\nFastAPI / Python" as backend
+component "SoulSettingsService\nDB: soul_settings" as settings
+component "SecretsService\nDB: soul_secrets" as secrets
+component "Postgres DB\nPostgreSQL + pgcrypto" as db
+component "AGE Graph\nApache AGE (extension)" as age
+component "Processor Core Pipeline\nCORE.PIPELINE" as processor
+component "RS Proxy\nsvc.rs.proxy" as rs_proxy
+component "RS Actors\ngraph.topk / cluster" as rs_actors
+component "Hyperloop CLI/API\nP40/P50 DSL" as hyperloop
+component "Inspectors & Guard\nplanning.enforce / guard.canonical.urls" as inspectors
+component "Incidents Service\nP50 incidents" as incidents
+component "Aux LLM Proxy\napi/aux-llm" as aux_llm
+component "LLM Providers\nDeepSeek/GigaChat/..." as llm_providers
+component "Frontend Mini-App\nWeb UI" as frontend
+component "Mini Chat App\nChat UI" as mini_chat
+component "Telegram Webhook\nInbound events" as telegram
+component "Prometheus\nmetrics scrape" as prometheus
+component "Grafana\ndashboards" as grafana
+nginx --> backend : proxy /api, /webhook/telegram
+frontend --> backend : API calls
+mini_chat --> backend : Dialog/UI
+telegram --> backend : Webhook ingress
+backend --> db : ORM/SQL
+settings --> db : read config
+secrets --> db : read secrets
+processor --> rs_proxy : offload heavy ops
+rs_proxy --> rs_actors : rsbus
+processor --> age : graph ops
+age --> db : extension
+hyperloop --> backend : execute DSL
+backend --> inspectors : enforce checks
+incidents --> db : incident_events
+backend --> aux_llm : server proxy
+aux_llm --> llm_providers : LLM calls
+backend --> prometheus : metrics endpoints
+prometheus --> grafana : datasource
+@enduml

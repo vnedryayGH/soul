@@ -1,0 +1,2 @@
+import{r as o,ar as s,aN as i}from"./index-CK96Y1vO.js";function e(){return e=Object.assign?Object.assign.bind():function(n){for(var t=1;t<arguments.length;t++){var r=arguments[t];for(var a in r)Object.prototype.hasOwnProperty.call(r,a)&&(n[a]=r[a])}return n},e.apply(this,arguments)}const c=(n,t)=>o.createElement(s,e({},n,{ref:t,icon:i})),p=o.forwardRef(c);export{p as R};
+//# sourceMappingURL=EditOutlined-ClikAqjf.js.map

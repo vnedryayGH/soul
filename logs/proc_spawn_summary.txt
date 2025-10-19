@@ -1,0 +1,42 @@
+﻿PROC SPAWN SUMMARY - 2025-09-29
+
+Data sources:
+- D:\YandexDisk\AI\0-3D4Art-Soft-SoulP\Telegram_Bot\logs\proc_spawn_trace.jsonl
+- D:\YandexDisk\AI\0-3D4Art-Soft-SoulP\Telegram_Bot\logs\bg_supervisor_events.jsonl
+
+Top initiators (parent_name -> count):
+- Cursor.exe: 14
+- cmd.exe: 2
+- powershell.exe: 2
+- lmgrd.exe: 1
+- postgres.exe: 1
+- ArmouryCrate.UserSessionHelper.exe: 1
+- browser.exe: 1
+
+Top processes (name -> count):
+- conhost.exe: 11
+- powershell.exe: 9
+- cmd.exe: 1
+- rtconnect.exe: 1
+
+Per-minute clusters:
+- 2025-09-29 16:30: 22
+
+Supervisor events:
+- supervisor_start: 
+
+System watch (top):
+- conhost.exe: 125
+- powershell.exe: 101
+- python.exe: 9
+- cmd.exe: 9
+- parent=: 132
+- parent=Cursor.exe: 78
+- parent=powershell.exe: 8
+- parent=cmd.exe: 4
+- parent=browser.exe: 4
+- parent=lmgrd.exe: 4
+- parent=postgres.exe: 4
+- parent=ArmouryCrate.UserSessionHelper.exe: 4
+- parent=rust-analyzer.exe: 3
+- parent=: 2

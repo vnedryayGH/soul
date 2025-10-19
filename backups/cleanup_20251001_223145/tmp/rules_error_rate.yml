@@ -1,0 +1,30 @@
+groups:
+  - name: error_rate_rules
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(soulpulse_errors_total_by_kind{kind!="test"}[5m]))
+          /
+          sum(rate(soulpulse_requests_total[5m])) > 0.02
+        for: 10m
+        labels:
+          severity: warning
+          service: soulpulse
+        annotations:
+          summary: "High error rate (>2%)"
+          description: "error_rate exceeded 2% for 10m (test 4xx excluded)."
+
+      - alert: HighErrorRateCritical
+        expr: |
+          sum(rate(soulpulse_errors_total_by_kind{kind!="test"}[5m]))
+          /
+          sum(rate(soulpulse_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: soulpulse
+        annotations:
+          summary: "High error rate CRITICAL (>5%)"
+          description: "error_rate exceeded 5% for 5m (test 4xx excluded)."
+

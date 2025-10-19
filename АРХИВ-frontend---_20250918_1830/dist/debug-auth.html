@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SoulPulse Web Auth Debug</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            line-height: 1.6;
+            background: #f5f5f5;
+        }
+        .container { 
+            max-width: 800px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status { 
+            padding: 10px; 
+            margin: 10px 0; 
+            border-radius: 5px; 
+        }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        button { 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            padding: 10px 20px; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        #log { 
+            background: #f8f9fa; 
+            border: 1px solid #dee2e6; 
+            padding: 15px; 
+            border-radius: 5px; 
+            max-height: 400px; 
+            overflow-y: auto; 
+            font-family: monospace; 
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        .test-section {
+            border: 1px solid #ddd;
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin: 16px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 SoulPulse Web Auth Debug Tool</h1>
+        <p>Полный инструмент для диагностики проблем с веб авторизацией</p>
+
+        <div class="test-section">
+            <h3>📊 Общая информация</h3>
+            <div id="generalInfo"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🌐 API Подключение</h3>
+            <button onclick="testAPI()">Тест API Health</button>
+            <button onclick="testCORS()">Тест CORS</button>
+            <button onclick="testChatAPI()">Тест Chat API</button>
+            <div id="apiStatus"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📱 Telegram WebApp</h3>
+            <button onclick="testTelegramWebApp()">Проверить Telegram WebApp</button>
+            <button onclick="tryInitTelegramWebApp()">Попробовать инициализировать WebApp</button>
+            <div id="telegramStatus"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>💾 SessionStorage</h3>
+            <div class="grid">
+                <div>
+                    <button onclick="testSessionStorage()">Проверить SessionStorage</button>
+                    <button onclick="clearSessionStorage()">Очистить SessionStorage</button>
+                </div>
+                <div>
+                    <button onclick="simulateAuth()">Симулировать авторизацию</button>
+                    <button onclick="copyFromWebApp()">Копировать из WebApp</button>
+                </div>
+            </div>
+            <div id="storageStatus"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🔐 Авторизация</h3>
+            <button onclick="testAuth()">Тест полной авторизации</button>
+            <button onclick="testWebAuthPage()">Тест страницы /webauth</button>
+            <div id="authStatus"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🛠️ Исправления</h3>
+            <button onclick="fixAuth()" class="danger">Попробовать исправить авторизацию</button>
+            <button onclick="forceReload()" class="danger">Принудительная перезагрузка</button>
+            <div id="fixStatus"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📝 Лог событий</h3>
+            <button onclick="clearLog()">Очистить лог</button>
+            <button onclick="exportLog()">Экспорт лога</button>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <script>
+        // Определяем API_BASE динамически
+        const getAPIBase = () => {
+            const host = window.location.hostname;
+            if (host === 'localhost' || host === '127.0.0.1') {
+                return 'http://localhost:8000/api';
+            } else if (host.endsWith('soulpulse.art')) {
+                return '/api';
+            } else {
+                return 'http://localhost:8000/api'; // fallback
+            }
+        };
+
+        const API_BASE = getAPIBase();
+        let logElement = document.getElementById('log');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toISOString();
+            const logMessage = `[${timestamp}] ${message}\n`;
+            logElement.textContent += logMessage;
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(message);
+        }
+
+        function clearLog() {
+            logElement.textContent = '';
+        }
+
+        function exportLog() {
+            const logContent = logElement.textContent;
+            const blob = new Blob([logContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `debug-log-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function updateStatus(elementId, content, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="status ${type}">${content}</div>`;
+        }
+
+        // Инициализация
+        window.onload = function() {
+            log('🚀 Debug tool инициализирован');
+            
+            // Общая информация
+            const info = `
+                <strong>URL:</strong> ${window.location.href}<br>
+                <strong>Host:</strong> ${window.location.hostname}<br>
+                <strong>Port:</strong> ${window.location.port}<br>
+                <strong>Protocol:</strong> ${window.location.protocol}<br>
+                <strong>User Agent:</strong> ${navigator.userAgent}<br>
+                <strong>API_BASE:</strong> ${API_BASE}<br>
+                <strong>Parent:</strong> ${window.parent !== window ? 'В iframe/окне' : 'Самостоятельное окно'}
+            `;
+            document.getElementById('generalInfo').innerHTML = info;
+            
+            // Автоматическая диагностика при загрузке
+            setTimeout(() => {
+                testAPI();
+                testTelegramWebApp();
+                testSessionStorage();
+            }, 1000);
+        };
+
+        // Тест API
+        async function testAPI() {
+            log('🔄 Тестируем API health endpoint...');
+            updateStatus('apiStatus', 'Проверяем API...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`✅ API health успешен: ${data.status} v${data.version}`);
+                    updateStatus('apiStatus', `API работает: ${data.status} v${data.version}`, 'success');
+                } else {
+                    log(`❌ API health ошибка: ${response.status} ${response.statusText}`);
+                    updateStatus('apiStatus', `Ошибка API: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log(`💥 API health исключение: ${error.message}`);
+                updateStatus('apiStatus', `Ошибка соединения: ${error.message}`, 'error');
+            }
+        }
+
+        // Тест CORS
+        async function testCORS() {
+            log('🔄 Тестируем CORS настройки...');
+            
+            try {
+                const response = await fetch(`${API_BASE}/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Origin': window.location.origin
+                    }
+                });
+                
+                log(`✅ CORS тест прошел: ${response.status}`);
+                log(`📋 CORS заголовки: ${JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2)}`);
+            } catch (error) {
+                log(`❌ CORS ошибка: ${error.message}`);
+            }
+        }
+
+        // Тест Chat API
+        async function testChatAPI() {
+            log('🔄 Тестируем Chat API...');
+            
+            const tgId = sessionStorage.getItem('tg_id');
+            if (!tgId) {
+                log('❌ Нет tg_id для тестирования Chat API');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/chat/threads`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-User-ID': tgId
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`✅ Chat API работает: найдено ${data.length || 0} тредов`);
+                } else {
+                    log(`❌ Chat API ошибка: ${response.status} ${response.statusText}`);
+                }
+            } catch (error) {
+                log(`💥 Chat API исключение: ${error.message}`);
+            }
+        }
+
+        // Тест Telegram WebApp
+        function testTelegramWebApp() {
+            log('🔄 Проверяем Telegram WebApp...');
+            
+            const checks = {
+                'Window defined': typeof window !== 'undefined',
+                'Telegram exists': !!(window.Telegram),
+                'WebApp exists': !!(window.Telegram?.WebApp),
+                'initData exists': !!(window.Telegram?.WebApp?.initData),
+                'initDataUnsafe exists': !!(window.Telegram?.WebApp?.initDataUnsafe),
+                'User exists': !!(window.Telegram?.WebApp?.initDataUnsafe?.user),
+                'User ID exists': !!(window.Telegram?.WebApp?.initDataUnsafe?.user?.id)
+            };
+            
+            let status = '<h4>Проверки Telegram WebApp:</h4><ul>';
+            let allGood = true;
+            
+            for (const [check, result] of Object.entries(checks)) {
+                const icon = result ? '✅' : '❌';
+                status += `<li>${icon} ${check}: ${result}</li>`;
+                if (!result) allGood = false;
+                log(`${icon} ${check}: ${result}`);
+            }
+            
+            status += '</ul>';
+            
+            if (window.Telegram?.WebApp) {
+                const webApp = window.Telegram.WebApp;
+                status += `<h4>Данные WebApp:</h4>`;
+                status += `<strong>initData:</strong> ${webApp.initData || 'пусто'}<br>`;
+                if (webApp.initDataUnsafe) {
+                    status += `<strong>initDataUnsafe:</strong><br><pre>${JSON.stringify(webApp.initDataUnsafe, null, 2)}</pre>`;
+                }
+                
+                log(`📊 WebApp initData: ${webApp.initData}`);
+                log(`📊 WebApp initDataUnsafe: ${JSON.stringify(webApp.initDataUnsafe, null, 2)}`);
+            }
+            
+            updateStatus('telegramStatus', status, allGood ? 'success' : 'warning');
+        }
+
+        // Попытка инициализации Telegram WebApp
+        function tryInitTelegramWebApp() {
+            log('🔄 Попытка инициализации Telegram WebApp...');
+            
+            if (window.Telegram?.WebApp) {
+                try {
+                    const webApp = window.Telegram.WebApp;
+                    webApp.ready();
+                    webApp.expand();
+                    log('✅ WebApp инициализирован');
+                    
+                    setTimeout(() => {
+                        testTelegramWebApp();
+                    }, 1000);
+                } catch (error) {
+                    log(`❌ Ошибка инициализации WebApp: ${error.message}`);
+                }
+            } else {
+                log('❌ Telegram WebApp недоступен для инициализации');
+            }
+        }
+
+        // Тест SessionStorage
+        function testSessionStorage() {
+            log('🔄 Проверяем SessionStorage...');
+            
+            const tgId = sessionStorage.getItem('tg_id');
+            const telegramUser = sessionStorage.getItem('telegram_user');
+            
+            let status = '<h4>SessionStorage данные:</h4>';
+            status += `<strong>tg_id:</strong> ${tgId || 'не найден'}<br>`;
+            status += `<strong>telegram_user:</strong> ${telegramUser ? 'найден' : 'не найден'}<br>`;
+            
+            if (telegramUser) {
+                try {
+                    const user = JSON.parse(telegramUser);
+                    status += `<strong>Parsed user:</strong><br><pre>${JSON.stringify(user, null, 2)}</pre>`;
+                    log(`📊 Parsed telegram_user: ${JSON.stringify(user, null, 2)}`);
+                } catch (e) {
+                    status += `<strong>Ошибка парсинга:</strong> ${e.message}<br>`;
+                    log(`❌ Ошибка парсинга telegram_user: ${e.message}`);
+                }
+            }
+            
+            log(`💾 tg_id: ${tgId}`);
+            log(`💾 telegram_user: ${telegramUser}`);
+            
+            const type = (tgId && telegramUser) ? 'success' : 'warning';
+            updateStatus('storageStatus', status, type);
+        }
+
+        // Очистка SessionStorage
+        function clearSessionStorage() {
+            log('🗑️ Очищаем SessionStorage...');
+            sessionStorage.removeItem('tg_id');
+            sessionStorage.removeItem('telegram_user');
+            updateStatus('storageStatus', 'SessionStorage очищен', 'info');
+            log('✅ SessionStorage очищен');
+        }
+
+        // Симуляция авторизации
+        function simulateAuth() {
+            log('🎭 Симулируем авторизацию...');
+            
+            const testUser = {
+                id: 123456789,
+                first_name: 'Test',
+                last_name: 'User',
+                username: 'testuser'
+            };
+            
+            sessionStorage.setItem('tg_id', String(testUser.id));
+            sessionStorage.setItem('telegram_user', JSON.stringify(testUser));
+            
+            log(`✅ Создан тестовый пользователь: ${JSON.stringify(testUser)}`);
+            updateStatus('storageStatus', `Создан тестовый пользователь: ${testUser.id}`, 'success');
+            
+            testSessionStorage();
+        }
+
+        // Копирование из WebApp
+        function copyFromWebApp() {
+            log('🔄 Копируем данные из Telegram WebApp...');
+            
+            if (window.Telegram?.WebApp?.initDataUnsafe?.user) {
+                const user = window.Telegram.WebApp.initDataUnsafe.user;
+                sessionStorage.setItem('tg_id', String(user.id));
+                sessionStorage.setItem('telegram_user', JSON.stringify(user));
+                
+                log(`✅ Скопированы данные из WebApp: ${JSON.stringify(user)}`);
+                updateStatus('storageStatus', `Данные скопированы из WebApp: ${user.id}`, 'success');
+                testSessionStorage();
+            } else {
+                log('❌ Нет данных пользователя в WebApp для копирования');
+                updateStatus('storageStatus', 'Нет данных WebApp для копирования', 'error');
+            }
+        }
+
+        // Тест полной авторизации
+        async function testAuth() {
+            log('🔐 Тестируем полную авторизацию...');
+            updateStatus('authStatus', 'Проверяем авторизацию...', 'info');
+            
+            // 1. Проверяем SessionStorage
+            const tgId = sessionStorage.getItem('tg_id');
+            if (!tgId) {
+                log('❌ Нет tg_id в SessionStorage');
+                updateStatus('authStatus', 'Ошибка: нет tg_id в SessionStorage', 'error');
+                return;
+            }
+            
+            // 2. Тестируем API запрос с авторизацией
+            try {
+                const response = await fetch(`${API_BASE}/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-User-ID': tgId
+                    }
+                });
+                
+                if (response.ok) {
+                    log(`✅ Авторизованный API запрос успешен`);
+                    updateStatus('authStatus', `Авторизация работает для пользователя ${tgId}`, 'success');
+                } else {
+                    log(`❌ Авторизованный API запрос ошибка: ${response.status}`);
+                    updateStatus('authStatus', `Ошибка авторизации: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log(`💥 Авторизация исключение: ${error.message}`);
+                updateStatus('authStatus', `Ошибка соединения: ${error.message}`, 'error');
+            }
+        }
+
+        // Тест страницы WebAuth
+        async function testWebAuthPage() {
+            log('🔄 Тестируем страницу /webauth...');
+            
+            try {
+                const response = await fetch('/webauth');
+                if (response.ok) {
+                    log('✅ Страница /webauth доступна');
+                } else {
+                    log(`❌ Страница /webauth ошибка: ${response.status}`);
+                }
+            } catch (error) {
+                log(`💥 Ошибка загрузки /webauth: ${error.message}`);
+            }
+        }
+
+        // Попытка исправления авторизации
+        function fixAuth() {
+            log('🔧 Попытка автоматического исправления авторизации...');
+            updateStatus('fixStatus', 'Исправляем...', 'info');
+            
+            // 1. Пробуем извлечь пользователя из WebApp
+            if (window.Telegram?.WebApp?.initDataUnsafe?.user) {
+                copyFromWebApp();
+                log('✅ Шаг 1: Данные скопированы из WebApp');
+            } else {
+                // 2. Создаем тестового пользователя
+                simulateAuth();
+                log('✅ Шаг 2: Создан тестовый пользователь');
+            }
+            
+            // 3. Тестируем результат
+            setTimeout(() => {
+                testAuth();
+                updateStatus('fixStatus', 'Попытка исправления завершена', 'success');
+            }, 1000);
+        }
+
+        // Принудительная перезагрузка
+        function forceReload() {
+            log('🔄 Принудительная перезагрузка...');
+            sessionStorage.clear();
+            localStorage.clear();
+            
+            // Перезагружаем основное окно (если открыто из веб-приложения)
+            if (window.opener && !window.opener.closed) {
+                window.opener.location.reload();
+            }
+            
+            window.location.reload();
+        }
+    </script>
+</body>
+</html>

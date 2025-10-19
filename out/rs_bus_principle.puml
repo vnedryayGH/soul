@@ -1,0 +1,21 @@
+@startuml
+!theme plain
+title RS Bus — Принципиальная схема
+component "Processor Core\nclient" as proc
+component "RS Proxy\nsvc.rs.proxy" as rs_proxy
+component "RS Bus\nUDS / JSON contracts" as rsbus
+component "Actor: graph.topk\nRust" as act_topk
+component "Actor: graph.cluster\nRust" as act_cluster
+component "Actor: graph.aggregate\nRust" as act_agg
+component "Prometheus (RS)\nrs metrics" as prom
+proc --> rs_proxy : request (JSON)
+rs_proxy --> rsbus : forward
+rsbus --> act_topk : route by actor
+rsbus --> act_cluster : route by actor
+rsbus --> act_agg : route by actor
+act_topk --> rs_proxy : response
+act_cluster --> rs_proxy : response
+act_agg --> rs_proxy : response
+rs_proxy --> proc : deliver
+rsbus --> prom : export metrics
+@enduml

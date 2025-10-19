@@ -1,0 +1,185 @@
+
+{
+  "rows": [
+    {
+      "name": "DOMAIN_PROD",
+      "location": "deploy/nginx/soulpulse.conf: server_name",
+      "test_value": "",
+      "test_date": "",
+      "prod_value": "mini.soulpulse.art",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": "Резервный IP: 217.12.38.238"
+    },
+    {
+      "name": "DOMAIN_TEST",
+      "location": "deploy/nginx/test_soulpulse_art_nginx.conf",
+      "test_value": "test.soulpulse.art",
+      "test_date": "",
+      "prod_value": "",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": "reverse-SSH в конфиге"
+    },
+    {
+      "name": "TELEGRAM_BOT_USERNAME",
+      "location": "BotFather",
+      "test_value": "",
+      "test_date": "",
+      "prod_value": "@soulpulse_mini_bot",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": ""
+    },
+    {
+      "name": "SSH_APP_SERVER",
+      "location": "deploy/ssh_keys/app_server_key",
+      "test_value": "root@test.soulpulse.art:22",
+      "test_date": "",
+      "prod_value": "root@mini.soulpulse.art:22",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": "Ключ приватный — не публиковать"
+    },
+    {
+      "name": "NGINX_CONF_PROD",
+      "location": "repo",
+      "test_value": "",
+      "test_date": "",
+      "prod_value": "deploy/nginx/soulpulse.conf",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": ""
+    },
+    {
+      "name": "FRONTEND_ROOT_PROD",
+      "location": "nginx root",
+      "test_value": "",
+      "test_date": "",
+      "prod_value": "/var/www/soulpulse/frontend",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": ""
+    },
+    {
+      "name": "NGINX_API_UPSTREAM",
+      "location": "nginx location /api",
+      "test_value": "127.0.0.1:55176",
+      "test_date": "",
+      "prod_value": "127.0.0.1:PORT",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": "proxy_pass"
+    },
+    {
+      "name": "NGINX_CONF_TEST",
+      "location": "repo",
+      "test_value": "deploy/nginx/test_soulpulse_art_nginx.conf",
+      "test_date": "",
+      "prod_value": "",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": "reverse-SSH"
+    },
+    {
+      "name": "BACKEND_CODE_PATH",
+      "location": "server",
+      "test_value": "D:\\YandexDisk\\AI\\0-3D4Art-Soft-SoulP\\Telegram_Bot\\backend",
+      "test_date": "",
+      "prod_value": "/opt/soulpulse/app/Telegram_Bot/backend",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": ""
+    },
+    {
+      "name": "BACKEND_SERVICE",
+      "location": "systemd",
+      "test_value": "",
+      "test_date": "",
+      "prod_value": "soulpulse-backend.service",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": ""
+    },
+    {
+      "name": "BACKEND_ENV_FILE",
+      "location": "server",
+      "test_value": "backend/.env.test.local",
+      "test_date": "",
+      "prod_value": "/etc/soulpulse/miniapp_backend.env",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": "Секреты редактировать осторожно"
+    },
+    {
+      "name": "BACKEND_ENV_VARS",
+      "location": "env file",
+      "test_value": "",
+      "test_date": "",
+      "prod_value": "DATABASE_URL,BOT_TOKEN,JWT_SECRET,CORS_ORIGINS",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": ""
+    },
+    {
+      "name": "DB_HOST",
+      "location": "postgres",
+      "test_value": "127.0.0.1",
+      "test_date": "",
+      "prod_value": "46.173.24.4",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": "Адрес сервера БД (прод)"
+    },
+    {
+      "name": "DATABASE_URL",
+      "location": "/etc/soulpulse/miniapp_backend.env",
+      "test_value": "postgresql+asyncpg://miniapp_user:miniapp_pwd@127.0.0.1:5432/miniapp_db",
+      "test_date": "",
+      "prod_value": "postgresql+asyncpg://miniapp_user:miniapp_pwd@46.173.24.4:5432/miniapp_db",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": "DSN прод-БД"
+    },
+    {
+      "name": "DOC_README_REPO_MINIMAL",
+      "location": "README_repo_minimal.md",
+      "test_value": "",
+      "test_date": "",
+      "prod_value": "актуализировано",
+      "prod_date": "",
+      "check_command": "",
+      "action": "",
+      "check_result": "OK",
+      "comment": "Прод‑доступы, SSH, деплой фронта"
+    }
+  ]
+}

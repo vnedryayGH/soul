@@ -1,0 +1,50 @@
+﻿[2025-09-29T04:29:45.6345372+03:00] started monitor_prod_services
+[2025-09-29T04:29:45.9618407+03:00] started guardian
+[2025-09-29T04:29:46.1674932+03:00] prod health=200
+[2025-09-29T04:29:46.3136216+03:00] wmi-trace error: Access denied 
+[2025-09-29T04:36:19.4233855+03:00] started monitor_prod_services
+[2025-09-29T04:36:19.7831146+03:00] started guardian
+[2025-09-29T04:36:19.9836780+03:00] prod health=200
+[2025-09-29T04:36:20.1177520+03:00] wmi-trace error: Access denied 
+[2025-09-29T04:40:26.9214799+03:00] ok running monitor_prod_services
+[2025-09-29T04:40:27.1331379+03:00] ok running guardian
+[2025-09-29T04:40:27.2952457+03:00] prod health=200
+[2025-09-29T04:40:27.4132465+03:00] wmi-trace error: Access denied 
+[2025-09-29T04:52:48.9214146+03:00] ok running monitor_prod_services
+[2025-09-29T04:52:49.1769475+03:00] ok running guardian
+[2025-09-29T04:52:49.3202609+03:00] prod health=200
+[2025-09-29T04:52:49.4057691+03:00] wmi-trace error: Access denied 
+[2025-09-29T04:57:48.4978518+03:00] ok running monitor_prod_services
+[2025-09-29T04:57:48.8306667+03:00] ok running guardian
+[2025-09-29T04:57:49.0190364+03:00] prod health=200
+[2025-09-29T04:57:49.1372457+03:00] wmi-trace error: Access denied 
+[2025-09-29T04:57:49.4397340+03:00] recent: powershell.exe pid=24232
+[2025-09-29T04:57:49.4447351+03:00] recent: powershell.exe pid=24676
+[2025-09-29T04:57:49.4467352+03:00] recent: cmd.exe pid=22576
+[2025-09-29T04:57:49.4487352+03:00] recent: cmd.exe pid=5020
+[2025-09-29T04:57:49.4507360+03:00] recent: cmd.exe pid=23536
+[2025-09-29T04:57:49.4517340+03:00] recent: powershell.exe pid=8832
+[2025-09-29T04:57:49.4527348+03:00] recent: powershell.exe pid=13492
+[2025-09-29T04:57:49.4547338+03:00] recent: powershell.exe pid=14976
+[2025-09-29T04:57:49.4567351+03:00] recent: powershell.exe pid=29208
+[2025-09-29T04:57:49.4587350+03:00] recent: powershell.exe pid=25224
+[2025-09-29T04:57:49.4607352+03:00] recent: cmd.exe pid=15124
+[2025-09-29T04:57:49.4617370+03:00] recent: powershell.exe pid=16012
+[2025-09-29T04:57:49.4697356+03:00] recent: powershell.exe pid=15296
+[2025-09-29T04:57:49.4727342+03:00] recent: powershell.exe pid=27628
+[2025-09-29T21:24:30.0879825+03:00] started monitor_prod_services
+[2025-09-29T21:24:30.2928146+03:00] prod health=200
+[2025-09-29T21:24:30.4067313+03:00] wmi-trace error: Access denied 
+[2025-09-29T21:24:30.7809119+03:00] recent: cmd.exe pid=9804
+[2025-09-29T21:24:30.9382735+03:00] recent: cmd.exe pid=15444
+[2025-09-29T21:24:31.1144636+03:00] recent: cmd.exe pid=23068
+[2025-09-29T21:24:31.2590956+03:00] recent: cmd.exe pid=16388
+[2025-09-29T21:24:31.4081274+03:00] recent: powershell.exe pid=6692
+[2025-09-29T21:24:31.5619482+03:00] recent: powershell.exe pid=26084
+[2025-09-29T21:24:31.7194592+03:00] recent: powershell.exe pid=25784
+[2025-09-29T21:24:31.8730651+03:00] recent: powershell.exe pid=15664
+[2025-09-29T21:24:32.0096087+03:00] recent: powershell.exe pid=4192
+[2025-09-29T21:24:32.1587014+03:00] recent: powershell.exe pid=18616
+[2025-09-29T21:24:32.2873162+03:00] recent: powershell.exe pid=27256
+[2025-09-29T21:24:32.4222065+03:00] recent: powershell.exe pid=17940
+[2025-09-29T21:24:32.5692446+03:00] recent: powershell.exe pid=21788

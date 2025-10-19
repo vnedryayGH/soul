@@ -1,0 +1,14 @@
+{
+  "ssh_prefs": {
+    "host": "root@mini.soulpulse.art",
+    "key": "deploy/ssh_keys/app_server_key"
+  },
+  "checks_form": {
+    "title": "Deploy frontend (scp+ssh)",
+    "env": "prod",
+    "command": "scp -i deploy/ssh_keys/app_server_key -o StrictHostKeyChecking=accept-new frontend/dist.tgz root@mini.soulpulse.art:/tmp/dist.tgz && ssh -i deploy/ssh_keys/app_server_key -o StrictHostKeyChecking=accept-new root@mini.soulpulse.art 'mkdir -p /var/www/soulpulse/frontend && tar -xzf /tmp/dist.tgz -C /var/www/soulpulse/frontend && chown -R www-data:www-data /var/www/soulpulse/frontend && nginx -t && systemctl reload nginx'",
+    "expected": "Nginx reload ok",
+    "last_result": "scp: stat local \"frontend/dist.tgz\": No such file or directory",
+    "comment": ""
+  }
+}

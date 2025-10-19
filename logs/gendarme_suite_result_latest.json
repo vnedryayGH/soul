@@ -1,0 +1,36 @@
+{
+  "results": [
+    {
+      "test_key": "p29.pipeline_smoke",
+      "status": "failed",
+      "metrics": {
+        "duration_ms": 7
+      },
+      "detail": "expected 'except' or 'finally' block (hyperloop_engine.py, line 398)"
+    },
+    {
+      "test_key": "p29.judge_charter",
+      "status": "failed",
+      "metrics": {
+        "duration_ms": 8
+      },
+      "detail": "expected 'except' or 'finally' block (hyperloop_engine.py, line 398)"
+    },
+    {
+      "test_key": "p29.processor_cycle",
+      "status": "passed",
+      "metrics": {
+        "duration_ms": 7
+      },
+      "detail": "event=89d67221-a313-40c0-90fa-d274c2f9a04b status=processed"
+    },
+    {
+      "test_key": "p29.hyperloop_policy_block",
+      "status": "failed",
+      "metrics": {
+        "duration_ms": 10
+      },
+      "detail": "expected 'except' or 'finally' block (hyperloop_engine.py, line 398)"
+    }
+  ]
+}

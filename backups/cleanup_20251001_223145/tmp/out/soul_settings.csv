@@ -1,0 +1,41 @@
+key,value,description,category,data_type,is_configurable
+cache_cleanup_threshold,70,Порог для очистки кеша (%),cache,integer,t
+cache_max_entries,100,Максимальное количество записей в кеше,cache,integer,t
+cache_similarity_threshold,0.7,Порог схожести для кеша,cache,float,t
+cache_ttl_days,30,Время жизни кеша (дни),cache,integer,t
+connection_semantic_weight,0.5,Вес семантической близости в связях,connections,float,t
+connection_strength_default,0.5,Сила связи по умолчанию,connections,float,t
+connection_temporal_decay,86400.0,Константа временного затухания связей (секунды),connections,float,t
+connection_temporal_weight,0.5,Вес временной близости в связях,connections,float,t
+context_size,20,Размер контекста для формирования ответов Soul,context,integer,t
+max_context_size,100,Максимальный размер контекста,context,integer,t
+ranked_ratio,0.7,Доля ранжированных квантов в контексте (алгоритм 30/70),context,float,t
+recent_ratio,0.3,Доля последних квантов в контексте (алгоритм 30/70),context,float,t
+emotion_analysis_window,30,Окно анализа эмоций (дни),emotions,integer,t
+emotion_entropy_threshold,0.8,Порог энтропии эмоций,emotions,float,t
+emotion_intensity_threshold,0.3,Порог интенсивности эмоций,emotions,float,t
+emotion_valence_threshold,0.5,Порог валентности эмоций,emotions,float,t
+llm_provider_critical,deepseek,LLM провайдер для критических операций,llm,string,t
+llm_provider_default,gigachat,LLM провайдер по умолчанию,llm,string,t
+llm_temperature_critical,0.2,Температура LLM для критических операций,llm,float,t
+llm_temperature_default,0.7,Температура LLM по умолчанию,llm,float,t
+max_tokens_critical,4000,Максимум токенов для критических операций,llm,integer,t
+max_tokens_default,2000,Максимум токенов по умолчанию,llm,integer,t
+monitoring_alert_threshold,100,Порог для создания алертов,monitoring,integer,t
+monitoring_enabled,True,Включен ли мониторинг системы,monitoring,boolean,t
+monitoring_retention_hours,24,Время хранения метрик мониторинга (часы),monitoring,integer,t
+notification_max_per_day,100,Максимум уведомлений в день,notifications,integer,t
+optimization_auto_apply,False,Автоматически применять оптимизации,optimization,boolean,t
+optimization_enabled,true,Включена ли автоматическая оптимизация,optimization,boolean,t
+optimization_min_delta,0.01,Минимальное изменение для применения оптимизации,optimization,float,t
+optimization_window_days,7,Окно анализа для оптимизации (дни),optimization,integer,t
+personification_context_size,12,Размер контекста для персонификации,personification,integer,t
+personification_temperature,0.7,Температура для персонификации,personification,float,t
+rbac_architect_priority,100,Приоритет роли Architect,rbac,integer,t
+rbac_soul_priority,90,Приоритет роли Soul,rbac,integer,t
+reminder_context_ratio,0.3,Доля контекста для напоминаний,reminders,float,t
+reminder_context_size,12,Размер контекста для напоминаний,reminders,integer,t
+archive_threshold,0.05,Порог энергии для архивирования квантов,sleep,float,t
+connection_threshold,0.1,Минимальная сила связи для сохранения,sleep,float,t
+energy_decay_rate,0.01,Скорость затухания энергии квантов,sleep,float,t
+sleep_interval_hours,24,Интервал запуска процесса сна (часы),sleep,integer,t

@@ -1,0 +1,42 @@
+{
+  "ssh_prefs": {
+    "host": "root@mini.soulpulse.art",
+    "key": "deploy/ssh_keys/app_server_key"
+  },
+  "checks_form": {
+    "title": "Alembic upgrade",
+    "env": "prod",
+    "command": ". ~/.profile 2>/dev/null || true; cd /opt/soulpulse/app/Telegram_Bot/backend && . .venv/bin/activate 2>/dev/null || true; export PYTHONPATH=/opt/soulpulse/app/Telegram_Bot/backend:$PYTHONPATH; .venv/bin/python -m alembic upgrade head",
+    "expected": "Успех",
+    "last_result": "Traceback (most recent call last):\n  File \"/opt/soulpulse/app/Telegram_Bot/backend/.venv/bin/alembic\", line 7, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/opt/soulpulse/app/Telegram_Bot/backend/.venv/lib/python3.12/site-packages/alembic/config.py\", line 630, in main\n    CommandLine(prog=prog).main(argv=argv)\n  File \"/opt/soulpulse/app/Telegram_Bot/backend/.venv/lib/python3.12/site-packages/alembic/config.py\", line 624, in main\n    self.run_cmd(cfg, options)\n  File \"/opt/soulpulse/app/Telegram_Bot/backend/.venv/lib/python3.12/site-packages/alembic/config.py\", line 601, in run_cmd\n    fn(\n  File \"/opt/soulpulse/app/Telegram_Bot/backend/.venv/lib/python3.12/site-packages/alembic/command.py\", line 398, in upgrade\n    script.run_env()\n  File \"/opt/soulpulse/app/Telegram_Bot/backend/.venv/lib/python3.12/site-packages/alembic/script/base.py\", line 579, in run_env\n    util.load_python_file(self.dir, \"env.py\")\n  File \"/opt/soulpulse/app/Telegram_Bot/backend/.venv/lib/python3.12/site-packages/alembic/util/pyfiles.py\", line 93, in load_python_file\n    module = load_module_py(module_id, path)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/soulpulse/app/Telegram_Bot/backend/.venv/lib/python3.12/site-packages/alembic/util/pyfiles.py\", line 109, in load_module_py\n    spec.loader.exec_module(module)  # type: ignore\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<frozen importlib._bootstrap_external>\", line 995, in exec_module\n  File \"<frozen importlib._bootstrap>\", line 488, in _call_with_frames_removed\n  File \"/opt/soulpulse/app/Telegram_Bot/backend/alembic/env.py\", line 11, in <module>\n    from app.db import Base\nModuleNotFoundError: No module named 'app'",
+    "comment": "Применение миграций"
+  },
+  "servers_form": {
+    "name": "DATABASE_URL_PROD",
+    "location": "env",
+    "test_value": "postgresql://miniapp_user:miniapp_pwd@127.0.0.1:5432/miniapp_db",
+    "test_date": "",
+    "prod_value": "postgresql://miniapp_user:miniapp_pwd@46.173.24.4:5432/miniapp_db",
+    "prod_date": "",
+    "check_command": "PGPASSWORD=\"$(echo $DATABASE_URL | sed -E 's|.*://[^:]+:([^@]+)@.*|\\1|')\" psql -h 46.173.24.4 -U miniapp_user -d miniapp_db -Atc 'SELECT 1'",
+    "action": "test_connection",
+    "check_result": "OK",
+    "comment": "Продуктивная БД на отдельном сервере"
+  },
+  "llm_automation": {
+    "enabled": true,
+    "commands_file": "storage/data/llm_automation_commands.json",
+    "categories": [
+      "deployment",
+      "database",
+      "monitoring",
+      "development",
+      "security",
+      "api",
+      "maintenance"
+    ],
+    "auto_backup_before_deploy": true,
+    "notification_webhook": "https://mini.soulpulse.art/api/admin/notifications",
+    "max_command_timeout": 300
+  }
+}

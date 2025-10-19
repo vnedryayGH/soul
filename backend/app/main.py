@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, Depends, HTTPException, Request
+from typing import Optional
+import aiohttp
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, JSONResponse, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,8 +11,6 @@ import json
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Optional
-import aiohttp
 
 from .config import get_settings
 # Импорт модуля Telegram для обработки апдейтов в webhook
@@ -33,28 +33,19 @@ except Exception as _adv_err:
 from .routers import soul_dashboard_api as soul_dashboard_api_router
 from .routers import health_monitoring as health_monitoring_router
 try:
-    from .routers import autoscale_controller as autoscale_controller_router  # type: ignore
-    _AUTOSCALE_ROUTER = True
-except Exception as _asc_err:
-    _AUTOSCALE_ROUTER = False
-    logging.getLogger(__name__).warning(f"autoscale_controller router disabled: {_asc_err}")
+    from .routers import dev_access_admin as dev_access_admin_router  # type: ignore
+except Exception as _dev_acc_err:
+    dev_access_admin_router = None  # type: ignore
+    logging.getLogger(__name__).warning(f"dev_access_admin disabled: {_dev_acc_err}")
 from .routers import rs_metrics_admin as rs_metrics_admin_router
 from .routers import soul_search_api as soul_search_api_router
 from .routers import i18n as i18n_router
 from .routers import payments
 from .routers import prompts_integration
 from .routers import profile, themes, reminders
-try:
-    from .routers import grafana_facade as grafana_facade_router  # type: ignore
-except Exception:
-    grafana_facade_router = None  # type: ignore
 # P22 фасады импортируем лениво внутри флага ENABLE_P22_FACADES
 from .routers.reminders_facade import router as reminders_facade_router  # type: ignore
 from .routers import llm_management, message_management
-try:
-    from . import telegram_phi as telegram_phi  # type: ignore
-except Exception:
-    telegram_phi = None  # type: ignore
 from .routers import rbac_admin
 from .services.background_monitor import start_background_monitors  # type: ignore
 try:
@@ -160,41 +151,8 @@ except Exception as _cursor_ops_err:
 import os as _os_guard
 _SYSTEM_API_ENABLED = _os_guard.getenv("ENABLE_SYSTEM_API", "0").strip() in ("1", "true", "True")
 try:
-    # Ленивая и безопасная загрузка: если модуль падает на импорте, не блокируем приложение
     if _SYSTEM_API_ENABLED:
-        try:
-            from .routers import system_api  # type: ignore
-        except Exception as _sys_inner_err:
-            system_api = None  # type: ignore
-            logging.getLogger(__name__).warning(f"system_api disabled (import error): {_sys_inner_err}")
-            # Диагностический инцидент с рекомендациями
-            try:
-                from .db import async_session_maker as __sm  # type: ignore
-                from .services.health_monitoring_service import HealthMonitoringService as __HM  # type: ignore
-                async def __log_system_api_incident() -> None:
-                    async with __sm() as __db:
-                        hm = __HM()
-                        await hm.create_incident(db=__db, payload={
-                            "kind": "system_api_import_error",
-                            "severity": "moderate",
-                            "status": "open",
-                            "title": "system_api не подключён — ошибка импорта",
-                            "description": str(_sys_inner_err)[:4000],
-                            "tags": ["system_api","import","router"],
-                            "affected_components": ["backend.app.routers.system_api"],
-                            "owner": None,
-                        })
-                try:
-                    import asyncio as __aio
-                    __loop = __aio.get_event_loop()
-                    if __loop.is_running():
-                        __aio.create_task(__log_system_api_incident())
-                    else:
-                        __loop.run_until_complete(__log_system_api_incident())
-                except Exception:
-                    pass
-            except Exception:
-                pass
+        from .routers import system_api  # type: ignore
     else:
         system_api = None  # type: ignore
 except Exception as _sys_err:
@@ -254,11 +212,6 @@ from .routers import skills_admin
 from .routers import calendar_transport_admin
 from .routers import bot_admin
 from .api import llm_settings
-try:
-    from .routers import llm_admin_aux as _llm_aux_admin  # type: ignore
-except Exception as _llm_aux_err:  # pragma: no cover
-    _llm_aux_admin = None  # type: ignore
-    logging.getLogger(__name__).warning(f"llm_admin_aux disabled: {_llm_aux_err}")
 try:
     from . import telegram
 except Exception as _tg2_err:  # pragma: no cover
@@ -324,9 +277,13 @@ from .services.advanced_monitoring import record_request_metrics, record_webhook
 from .services.pg_listener import PgNotifyListener
 from .api_diagnostics import get_diagnostics, get_prometheus_metrics
 try:
-    from .services.promql_cache import promql_cache  # type: ignore
+    # Гистограммы/метрики для Aux LLM
+    from .lib.observability.metrics import get_percentile as _m_get_percentile, get_counter_total as _m_get_counter_total  # type: ignore
 except Exception:
-    promql_cache = None  # type: ignore
+    def _m_get_percentile(*args, **kwargs):  # type: ignore
+        return 0.0
+    def _m_get_counter_total(*args, **kwargs):  # type: ignore
+        return 0
 from .db import get_db_session
 from . import schemas
 from .auth import create_jwt, verify_init_data, decode_jwt
@@ -338,22 +295,9 @@ from .services.privacy_sanitizer import mask_pii_in_obj
 from .services.gendarme_service import GendarmeService
 from .routers import daily_admin as daily_admin_router
 
-# Настройка логирования (чтение уровня из ENV LOG_LEVEL)
-try:
-    import os as __os_log
-    _lvl_name = (__os_log.getenv("LOG_LEVEL", "INFO") or "INFO").upper()
-    _lvl = getattr(logging, _lvl_name, logging.INFO)
-except Exception:
-    _lvl = logging.INFO
-logging.basicConfig(level=_lvl)
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-try:
-    # Приводим к одному уровню и uvicorn-логгеры
-    logging.getLogger("uvicorn").setLevel(_lvl)
-    logging.getLogger("uvicorn.error").setLevel(_lvl)
-    logging.getLogger("uvicorn.access").setLevel(_lvl)
-except Exception:
-    pass
 
 settings = get_settings()
 _ENABLE_PG_LISTENER = False
@@ -608,10 +552,10 @@ async def xss_protection_middleware(request: Request, call_next):
 # Мониторинг middleware
 app.middleware("http")(log_request_middleware())
 
-# Security Headers Middleware (dynamic CSP)
+# Security Headers Middleware
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
-    """Добавляет заголовки безопасности ко всем ответам (динамический CSP из настроек)."""
+    """Добавляет заголовки безопасности ко всем ответам (с поддержкой Swagger UI)."""
     response = await call_next(request)
 
     # Основные заголовки безопасности
@@ -620,54 +564,36 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["X-XSS-Protection"] = "1; mode=block"
 
-    # Динамический CSP
+    # Базовый CSP
     is_docs = request.url.path.startswith("/docs") or request.url.path.startswith("/redoc")
-    try:
-        from .services.soul_settings_service import SoulSettingsService as _SS  # type: ignore
-        ss = _SS()
-        async with get_db_session() as _db:  # type: ignore
-            sc_hosts = list(await ss.get_setting("csp.allowed_script_hosts", _db, []) or [])
-            st_hosts = list(await ss.get_setting("csp.allowed_style_hosts", _db, []) or [])
-            img_hosts = list(await ss.get_setting("csp.allowed_img_hosts", _db, []) or [])
-            cn_hosts = list(await ss.get_setting("csp.allowed_connect_hosts", _db, []) or [])
-            fn_hosts = list(await ss.get_setting("csp.allowed_font_hosts", _db, []) or [])
-            fr_hosts = list(await ss.get_setting("csp.allowed_frame_hosts", _db, []) or [])
-            fa_hosts = list(await ss.get_setting("csp.allowed_frame_ancestors", _db, []) or [])
-    except Exception:
-        sc_hosts = st_hosts = img_hosts = cn_hosts = fn_hosts = fr_hosts = fa_hosts = []
-
-    def _join(name: str, base: list[str], extra: list[str]) -> str:
-        items = [i for i in base if isinstance(i, str) and i] + [str(h).strip() for h in (extra or []) if str(h).strip()]
-        return f"{name} " + " ".join(items) if items else f"{name} 'self'"
-
-    default_src = "default-src 'self'"
     if is_docs:
-        script_src = _join("script-src", ["'self'", "'unsafe-inline'", "'unsafe-eval'"], sc_hosts)
-        style_src = _join("style-src", ["'self'", "'unsafe-inline'"], st_hosts)
+        # Разрешаем CDN Swagger UI и шрифты для /docs
+        csp_policies = [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://telegram.org",
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
+            "img-src 'self' data: https:",
+            "connect-src 'self' wss: https://cdn.jsdelivr.net https://api.deepseek.com https://gigachat.devices.sberbank.ru https://ngw.devices.sberbank.ru https://mini.soulpulse.art",
+            "font-src 'self' https://fonts.gstatic.com",
+            "object-src 'none'",
+            "media-src 'self'",
+            "frame-src 'self' https://t.me https://*.telegram.org",
+            "frame-ancestors 'self' https://t.me https://*.telegram.org https://web.telegram.org"
+        ]
     else:
-        script_src = _join("script-src", ["'self'", "'unsafe-inline'"], sc_hosts)
-        style_src = _join("style-src", ["'self'", "'unsafe-inline'"], st_hosts)
-    img_src = _join("img-src", ["'self'", "data:", "https:"], img_hosts)
-    connect_src = _join("connect-src", ["'self'", "wss:"], cn_hosts)
-    font_src = _join("font-src", ["'self'"], fn_hosts)
-    object_src = "object-src 'none'"
-    media_src = "media-src 'self'"
-    frame_src = _join("frame-src", ["'self'"], fr_hosts)
-    frame_anc = _join("frame-ancestors", ["'self'"], fa_hosts)
-
-    csp_policies = [
-        default_src,
-        script_src,
-        style_src,
-        img_src,
-        connect_src,
-        font_src,
-        object_src,
-        media_src,
-        frame_src,
-        frame_anc,
-    ]
-    response.headers["Content-Security-Policy"] = "; ".join([p for p in csp_policies if p])
+        csp_policies = [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://telegram.org",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: https:",
+            "connect-src 'self' wss: https://api.deepseek.com https://gigachat.devices.sberbank.ru https://ngw.devices.sberbank.ru https://mini.soulpulse.art",
+            "font-src 'self'",
+            "object-src 'none'",
+            "media-src 'self'",
+            "frame-src 'self' https://t.me https://*.telegram.org",
+            "frame-ancestors 'self' https://t.me https://*.telegram.org https://web.telegram.org"
+        ]
+    response.headers["Content-Security-Policy"] = "; ".join(csp_policies)
 
     # HSTS только для HTTPS (в продакшене)
     if request.url.scheme == "https":
@@ -692,34 +618,33 @@ async def enforce_utf8_json_charset(request: Request, call_next):
         pass
     return response
 
-from .services.soul_settings_service import SoulSettingsService as _SSS  # type: ignore
-origins: list[str] = []
-try:
-    import asyncio as _aio
-    sss = _SSS()
-    # Пытаемся синхронно получить список разрешённых origin из БД, корректно управляя async‑генератором сессии
-    def _load_origins_sync() -> list[str]:
-        async def _run():
-            agen = get_db_session()  # type: ignore
-            _db = await agen.__anext__()  # get first yielded session
-            try:
-                vals = await sss.get_setting("cors.allowed_origins", _db, [])
-            finally:
-                try:
-                    await agen.aclose()
-                except Exception:
-                    pass
-            if isinstance(vals, list):
-                return [str(o).strip() for o in vals if str(o).strip()]
-            return []
-        loop = _aio.get_event_loop()
-        return loop.run_until_complete(_run())
-    origins = _load_origins_sync()
-except Exception:
-    origins = []
+# CORS - БЕЗОПАСНАЯ конфигурация (НЕ используем "*")
+origins = []
+if settings.cors_origins:
+    origins = [o.strip() for o in settings.cors_origins.split(",")]
+
+# Для локальной разработки добавляем ТОЛЬКО известные безопасные домены
+development_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173", 
+    "https://test.soulpulse.art",
+    "https://soulpulse.art",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173"
+]
+
+# Объединяем с конфигурационными origins (БЕЗ "*")
+origins.extend(development_origins)
+
+# Убираем "*" если он есть для безопасности
+if "*" in origins:
+    origins.remove("*")
+    logger.warning("Removed wildcard '*' from CORS origins for security")
+
+# Если список пустой, добавляем только localhost для разработки
 if not origins:
-    # Жёсткие dev-origins не добавляем; пустой список означает запрещены все внешние origin
-    logger.info("CORS origins not configured; defaulting to none (secure)")
+    origins = development_origins
+    logger.info(f"Using default safe CORS origins: {origins}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -761,12 +686,6 @@ except Exception as _wa_err:
     logging.getLogger(__name__).warning(f"web_auth router include failed: {_wa_err}")
 app.include_router(prompts.router)
 app.include_router(chat.router)
-# Phi settings router (Aux LLM Phi‑4 management)
-try:
-    from .routers import phi_settings as _phi_settings
-    app.include_router(_phi_settings.router)
-except Exception as _phi_err:
-    logging.getLogger(__name__).warning(f"phi_settings router include failed: {_phi_err}")
 app.include_router(soul_router.router)
 app.include_router(soul_ws_router.router)
 # Дублируем WebSocket‑роутер под префиксом /api для совместимости с Nginx
@@ -781,6 +700,11 @@ if _ADV_OPT_ENABLED:
 app.include_router(soul_dashboard_api_router.router)
 app.include_router(soul_dashboard_api_router.alias_router)
 app.include_router(health_monitoring_router.router)
+if dev_access_admin_router is not None:
+    try:
+        app.include_router(dev_access_admin_router.router)
+    except Exception as _dev_inc_err:
+        logging.getLogger(__name__).warning(f"dev_access_admin include failed: {_dev_inc_err}")
 app.include_router(soul_goals_api.router)
 if _ACT_GOALS_ENABLED:
     app.include_router(activity_goals_integration_router.router)
@@ -791,27 +715,7 @@ app.include_router(prompts_integration.router)
 app.include_router(profile.router)
 app.include_router(themes.router)
 app.include_router(reminders.router)
-try:
-    from .routers import visualization_feed as _viz_feed
-    app.include_router(_viz_feed.router)
-except Exception as _viz_err:
-    logging.getLogger(__name__).warning(f"visualization_feed disabled: {_viz_err}")
-if grafana_facade_router is not None:
-    try:
-        app.include_router(grafana_facade_router.router)
-    except Exception:
-        pass
-if _AUTOSCALE_ROUTER:
-    try:
-        app.include_router(autoscale_controller_router.router)
-    except Exception:
-        pass
 app.include_router(reminders_facade_router)
-try:
-    from .routers import reminders_audit as _rem_audit  # type: ignore
-    app.include_router(_rem_audit.router)
-except Exception as _rem_a_err:
-    logging.getLogger(__name__).warning(f"reminders_audit disabled: {_rem_a_err}")
 import os as __p22
 _P22_ENABLED = __p22.getenv("ENABLE_P22_FACADES", "0").strip() in ("1","true","True")
 # Календари: подключаем фасад всегда (read-доступ и SSE доступны независимо от флага; write внутри фасада под флагом)
@@ -855,26 +759,60 @@ app.include_router(user_permissions.router)
 app.include_router(user_role_management.router)
 app.include_router(performance.router)
 app.include_router(advanced_monitoring.router)
+from fastapi import APIRouter
+orchestrator_admin = APIRouter(prefix="/api/bot/orchestrator", tags=["Bot Orchestrator"])
+
+@orchestrator_admin.get("/health")
+async def orch_health():
+    from .orchestrator import orchestrator as _orch
+    try:
+        snap = _orch.health_snapshot()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "snapshot": snap}
+
+@orchestrator_admin.get("/queues")
+async def orch_queues():
+    from .orchestrator import orchestrator as _orch
+    try:
+        return {"ok": True, "queues": _orch.queues_overview()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@orchestrator_admin.post("/pause")
+async def orch_pause(queue: str):
+    from .orchestrator import orchestrator as _orch
+    try:
+        _orch.pause(queue)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@orchestrator_admin.post("/resume")
+async def orch_resume(queue: str):
+    from .orchestrator import orchestrator as _orch
+    try:
+        _orch.resume(queue)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@orchestrator_admin.post("/clear")
+async def orch_clear(queue: str):
+    from .orchestrator import orchestrator as _orch
+    try:
+        _orch.clear(queue)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+app.include_router(orchestrator_admin)
 try:
     from .routers import qlinks_admin as _qlinks_admin
     app.include_router(_qlinks_admin.router)
 except Exception as _ql_err:
     logging.getLogger(__name__).warning(f"qlinks_admin disabled: {_ql_err}")
-try:
-    from .routers import db_admin as _db_admin
-    app.include_router(_db_admin.router)
-    try:
-        app.include_router(_db_admin.router_public)
-    except Exception:
-        pass
-except Exception as _db_err:
-    logging.getLogger(__name__).warning(f"db_admin disabled: {_db_err}")
 app.include_router(rs_metrics_admin_router.router)
-try:
-    from .routers import rs_admin as _rs_admin
-    app.include_router(_rs_admin.router)
-except Exception as _rs_admin_err:
-    logging.getLogger(__name__).warning(f"rs_admin disabled: {_rs_admin_err}")
 try:
     from .routers import rs_admin_dashboard as _rs_dash
     app.include_router(_rs_dash.router)
@@ -897,26 +835,12 @@ try:
         logging.getLogger(__name__).warning(f"pdp_audit_admin disabled: {_pdp_audit_err}")
 except Exception as _rs_nightly_err:
     logging.getLogger(__name__).warning(f"rs_nightly_admin disabled: {_rs_nightly_err}")
-try:
-    from .routers import p62_admin as _p62_admin
-    app.include_router(_p62_admin.router)
-except Exception as _p62_err:
-    logging.getLogger(__name__).warning(f"p62_admin disabled: {_p62_err}")
 app.include_router(security_api.router)
 app.include_router(consistency_admin_router.router)
 app.include_router(security_red_team_router.router)
 app.include_router(dispatcher_admin.router)
 app.include_router(energy_admin.router)
-try:
-    from .routers import processor_dashboard_api as _processor_dashboard_api
-    app.include_router(_processor_dashboard_api.router)
-    try:
-        # Подключаем алиас‑роутер diagnostics для внешнего контура
-        app.include_router(_processor_dashboard_api.alias_router)
-    except Exception:
-        pass
-except Exception as _proc_dash_err:
-    logging.getLogger(__name__).warning(f"processor_dashboard_api disabled: {_proc_dash_err}")
+app.include_router(processor_dashboard.router)
 if _harvest_admin is not None:
     try:
         app.include_router(_harvest_admin.router)
@@ -973,11 +897,6 @@ if monitoring_public_router is not None:
     app.include_router(monitoring_public_router.router)
 if incidents_public_router is not None:
     app.include_router(incidents_public_router.router)
-try:
-    from .routers import db_governor_admin as _db_gov
-    app.include_router(_db_gov.router)
-except Exception as _db_gov_err:
-    logging.getLogger(__name__).warning(f"db_governor_admin disabled: {_db_gov_err}")
 if subscriptions_public_router is not None:
     app.include_router(subscriptions_public_router.router)
 if process_public_router is not None:
@@ -1008,11 +927,6 @@ try:
 except Exception as _exp_err:
     logging.getLogger(__name__).warning(f"experiments_admin disabled: {_exp_err}")
 try:
-    from .routers import telegram_admin as _tg_admin
-    app.include_router(_tg_admin.router)
-except Exception as _tg_err:
-    logging.getLogger(__name__).warning(f"telegram_admin disabled: {_tg_err}")
-try:
     from .routers import judge_admin as _judge_admin
     app.include_router(_judge_admin.router)
 except Exception as _judge_err:
@@ -1023,12 +937,7 @@ try:
 except Exception as _arch_err:
     logging.getLogger(__name__).warning(f"archivarius_admin disabled: {_arch_err}")
 from .routers import hyperloop_admin as _hyperloop_admin
-from .routers import github_proxy as _github_proxy
-from .routers import rs_metrics_admin as _rs_metrics_admin
 app.include_router(_hyperloop_admin.router)
-app.include_router(_rs_metrics_admin.router)
-app.include_router(_github_proxy.router)
-app.include_router(_github_proxy.webhook_router)
 try:
     from .routers import agent_comm as _agent_comm
     app.include_router(_agent_comm.router)
@@ -1068,58 +977,11 @@ try:
 except Exception as _code_err:
     logging.getLogger(__name__).warning(f"code_changes_admin disabled: {_code_err}")
 try:
-    from .routers import governor_admin as _gov_admin
-    app.include_router(_gov_admin.router)
-except Exception as _gov_err:
-    logging.getLogger(__name__).warning(f"governor_admin disabled: {_gov_err}")
-try:
-    from .routers import alertmanager_webhook as _am_webhook
-    app.include_router(_am_webhook.router)
-    try:
-        # Совместимость с путём Alertmanager из конфигов ops (admin/incidents)
-        app.include_router(_am_webhook.admin_router)
-    except Exception:
-        pass
-except Exception as _am_err:
-    logging.getLogger(__name__).warning(f"alertmanager_webhook disabled: {_am_err}")
-try:
-    from .routers import rs_actors as _rs_actors
-    app.include_router(_rs_actors.router)
-except Exception as _rs_act_err:
-    logging.getLogger(__name__).warning(f"rs_actors disabled: {_rs_act_err}")
-try:
     from .routers import processor_admin as _processor_admin
     app.include_router(_processor_admin.router)
-    # P52: коммуникации (админ) — доставка Telegram через backend‑прокси
-    try:
-        from .routers import comm_admin as _comm_admin
-        app.include_router(_comm_admin.router)
-    except Exception:
-        pass
-    try:
-        from .routers import rs_admin as _rs_admin
-        app.include_router(_rs_admin.router)
-    except Exception:
-        pass
 except Exception as _p30_err:
     logging.getLogger(__name__).warning(f"processor_admin disabled: {_p30_err}")
-
-# Гарантируем подключение comm_admin независимо от processor_admin
-try:
-    from .routers import comm_admin as _comm_admin_fallback
-    # Подключаем только если путь ещё не зарегистрирован
-    try:
-        _has_comm_admin = any(getattr(r, 'path', None) == '/api/admin/comm/delivery/telegram' for r in app.router.routes)  # type: ignore[attr-defined]
-    except Exception:
-        _has_comm_admin = False
-    if not _has_comm_admin:
-        app.include_router(_comm_admin_fallback.router)
-except Exception as _comm_err:
-    logging.getLogger(__name__).warning(f"comm_admin disabled: {_comm_err}")
 app.include_router(admin_settings_router.router)
-# training_ingest router temporarily disabled due to incident SOUL-P30-OPS-QUEUE-DRAIN-20251013
-# from .routers import training_ingest as _training_ingest  # type: ignore
-# app.include_router(_training_ingest.router)
 if resilience_admin_router is not None:
     try:
         app.include_router(resilience_admin_router.router)
@@ -1197,18 +1059,7 @@ async def add_security_headers(request: Request, call_next):
     
     return response
 app.include_router(llm_settings.router)
-try:
-    if (_llm_aux_admin is not None) and hasattr(_llm_aux_admin, "router"):
-        app.include_router(_llm_aux_admin.router)
-except Exception as _aux_err:
-    logging.getLogger(__name__).warning(f"llm_admin_aux include failed: {_aux_err}")
 app.include_router(rbac_admin.router)
-from .routers import soul_admin as _soul_admin_router
-try:
-    from .routers import llm_service_smoke as _llm_service_smoke
-    app.include_router(_llm_service_smoke.router)
-except Exception as _sm_err:  # pragma: no cover
-    logging.getLogger(__name__).warning(f"llm_service_smoke disabled: {_sm_err}")
 from .routers import soul_admin as _soul_admin_router
 app.include_router(_soul_admin_router.router)
 from .routers import soul_graph_admin as _soul_graph_admin_router
@@ -1219,8 +1070,6 @@ try:
 except Exception as _va_err:
     logging.getLogger(__name__).warning(f"voice_admin disabled: {_va_err}")
 
-
-# --- Minimal web-auth endpoints (compat) ---
 
 # Aux LLM proxy (server-side, prefers llm.aux.url from DB, fallback lima.base_url)
 @app.get("/api/aux-llm/health")
@@ -1326,13 +1175,18 @@ async def aux_llm_completion(request: Request):
                 pass
         if not base_url:
             raise HTTPException(status_code=404, detail="llm.aux.url not configured")
-        # Phi/Aux сервер: пробуем совместимые пути в порядке предпочтения
+        # Phi/Aux сервер: если base_url уже указывает на конкретный endpoint, используем его как есть
         base_clean = base_url.rstrip("/")
-        targets = [
-            f"{base_clean}/v1/completions",
-            f"{base_clean}/completion",
-            f"{base_clean}/v1/chat/completions",
-        ]
+        lower = base_clean.lower()
+        if lower.endswith("/completion") or lower.endswith("/v1/completions") or lower.endswith("/v1/chat/completions"):
+            targets = [base_clean]
+        else:
+            # иначе пробуем совместимые пути в порядке предпочтения
+            targets = [
+                f"{base_clean}/v1/completions",
+                f"{base_clean}/completion",
+                f"{base_clean}/v1/chat/completions",
+            ]
         timeout = aiohttp.ClientTimeout(total=max(1.0, timeout_ms / 1000.0))
         headers = {"Content-Type": request.headers.get("content-type", "application/json")}
         # Гарантируем корректный JSON при проксировании: пробуем распарсить и отправить как JSON,
@@ -1383,6 +1237,9 @@ async def aux_llm_completion(request: Request):
         except Exception:
             pass
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Minimal web-auth endpoints (compat) ---
 try:
     from .dependencies import verify_telegram_auth as _verify_telegram_auth
     from .auth import generate_time_based_otp as _gen_otp, create_jwt as _create_jwt
@@ -1466,16 +1323,6 @@ async def startup_event():
             logger.info("P30 ProcessorScheduler started")
         except Exception as e:
             logger.warning(f"ProcessorScheduler start error: {e}")
-        # Load Governor (управление загрузкой/CPUQuota/RS долей)
-        try:
-            import asyncio as __aio
-            from .services.load_governor import LoadGovernorService  # type: ignore
-            from .db import async_session_maker as __sm
-            app.state.load_governor = LoadGovernorService()  # type: ignore[attr-defined]
-            await app.state.load_governor.start(__sm)  # type: ignore[arg-type]
-            logger.info("LoadGovernor started")
-        except Exception as e:
-            logger.warning(f"LoadGovernor start error: {e}")
         # Mother of Flags (P28): periodic_health — оставляем
         try:
             import asyncio as __aio
@@ -1703,20 +1550,6 @@ async def telegram_webhook(request: Request):
             logger.info("[WEBHOOK] Non-message/callback update or invalid payload — ack ok")
             return {"status": "ok"}
 
-        # Определяем целевой обработчик: по секретному заголовку Telegram (для отдельного Phi‑бота)
-        use_phi = False
-        try:
-            sec = request.headers.get("x-telegram-bot-api-secret-token") or request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-            if sec:
-                from .services.soul_settings_service import SoulSettingsService as _SS  # type: ignore
-                async with get_db_session() as _db:  # type: ignore
-                    _svc = _SS()
-                    phi_secret = await _svc.get_setting("telegram.phi.secret_token", _db, None)
-                if phi_secret and isinstance(phi_secret, str) and sec == phi_secret:
-                    use_phi = True
-        except Exception:
-            use_phi = False
-
         # Запускаем обработку в фоне, чтобы мгновенно ответить Telegram и избежать таймаутов
         try:
             upd_id = body.get("update_id")
@@ -1724,81 +1557,7 @@ async def telegram_webhook(request: Request):
         except Exception:
             pass
         import asyncio
-        if use_phi and (telegram_phi is not None) and hasattr(telegram_phi, "process_telegram_update_phi"):
-            # Новая схема: кладём апдейт в Processor как phi.chat.incoming, с обогащённым payload
-            try:
-                from sqlalchemy import text as _text
-                async with get_db_session() as _dbi:  # type: ignore
-                    # Извлечём chat_id, user_id, message_type
-                    try:
-                        _msg = (body.get("message") or {}) if isinstance(body.get("message"), dict) else {}
-                        if not _msg and isinstance(body.get("callback_query"), dict):
-                            _msg = body.get("callback_query") or {}
-                        _chat_id = int((((_msg.get("chat") or {}).get("id")) or 0) or 0)
-                        try:
-                            _user_id = int(((_msg.get("from") or {}).get("id")) or 0)
-                        except Exception:
-                            _user_id = 0
-                        _mtype = "text"
-                        try:
-                            if "voice" in _msg:
-                                _mtype = "voice"
-                            elif "photo" in _msg:
-                                _mtype = "photo"
-                            elif "document" in _msg:
-                                _mtype = "document"
-                            elif "audio" in _msg:
-                                _mtype = "audio"
-                            elif "sticker" in _msg:
-                                _mtype = "sticker"
-                            elif "video" in _msg:
-                                _mtype = "video"
-                            elif "text" in _msg:
-                                _mtype = "text"
-                        except Exception:
-                            _mtype = "text"
-                    except Exception:
-                        _chat_id, _user_id, _mtype = 0, 0, "text"
-                    try:
-                        import uuid as _uuid
-                        _trace_id = str(_uuid.uuid4())
-                    except Exception:
-                        _trace_id = ""
-                    # Определяем kind по типу сообщения
-                    _kind = f"phi.chat.incoming.{_mtype}" if _mtype else "phi.chat.incoming.text"
-                    payload = {
-                        "update": body,
-                        "bot_key": "phi",
-                        "bot_route": "/webhook/telegram",
-                        "bot_provider": "aux",
-                        "bot_api_url": None,
-                        "thread_type": "phi_chat",
-                        "chat_id": _chat_id,
-                        "user_id": _user_id,
-                        "message_type": _mtype,
-                        "trace_id": _trace_id,
-                    }
-                    # Публикация в rsbus (ingress); fallback в БД — только если явно включён
-                    from .services.soul_settings_service import SoulSettingsService as _SS2  # type: ignore
-                    from .services.rsbus_client import rsbus_send  # type: ignore
-                    _svc2 = _SS2()
-                    _addr = await _svc2.get_setting("rs.hyperloop.addr", _dbi, "unix:///run/soul/rsbus.dev.sock")
-                    _timeout = int(await _svc2.get_setting("rs.hyperloop.timeout_ms", _dbi, 800))
-                    _topic = f"comm.incoming.phi.{_mtype}"
-                    _ = await rsbus_send(op="comm.ingress", payload={"topic": _topic, "message": payload}, addr=str(_addr), timeout_ms=_timeout, trace_id=_trace_id)
-                    # DB fallback по флагу (default=false)
-                    try:
-                        fb = await _svc2.get_setting("comm.fallback.db_enabled", _dbi, False)
-                    except Exception:
-                        fb = False
-                    if bool(fb) is True:
-                        await _dbi.execute(_text("insert into processor_events(kind, payload, status, priority) values (:k, CAST(:p AS jsonb), 'pending', 0)"), {"k": _kind, "p": __import__("json").dumps(payload)})
-                        await _dbi.commit()
-            except Exception:
-                # Fallback — прежний путь: обработка в фоне
-                asyncio.create_task(telegram_phi.process_telegram_update_phi(body))
-        else:
-            asyncio.create_task(telegram.process_telegram_update(body))
+        asyncio.create_task(telegram.process_telegram_update(body))
 
         # Немедленно возвращаем OK, не дожидаясь завершения обработки
         return {"status": "ok"}
@@ -1815,244 +1574,6 @@ async def telegram_webhook(request: Request):
         except Exception:
             pass
         return {"status": "ok"}  # Всегда возвращаем OK для Telegram
-
-
-@app.api_route("/api/webhook/telegram", methods=["POST", "GET", "HEAD"], include_in_schema=False)
-async def telegram_webhook_api_alias(request: Request):
-    """Алиас-роут под /api для совместимости с текущей Nginx-конфигурацией."""
-    return await telegram_webhook(request)
-
-# Отдельный webhook для Phi‑бота: строгая проверка секрета и soft‑drop при несоответствии
-@app.api_route("/webhook/telegram/phi", methods=["POST", "GET", "HEAD"], include_in_schema=False)
-async def telegram_webhook_phi(request: Request):
-    try:
-        # Мягкая обработка GET/HEAD
-        if request.method in ("GET", "HEAD"):
-            return {"status": "ok"}
-
-        # Проверяем секрет бота (строго, но может быть отключено через настройку phi.webhook.require_secret)
-        sec = request.headers.get("x-telegram-bot-api-secret-token") or request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-        require_secret = True
-        try:
-            from .services.secrets_service import SecretsService as _Sec  # type: ignore
-            from .services.soul_settings_service import SoulSettingsService as _SS  # type: ignore
-            async with get_db_session() as _db:  # type: ignore
-                _se = _Sec()
-                expect = await _se.get_secret(_db, "bot.secret.soul_phi")
-                svc = _SS()
-                if not expect:
-                    expect = await svc.get_setting("bot.secret.soul_phi", _db, None)
-                if not expect:
-                    expect = await svc.get_setting("telegram.phi.secret_token", _db, None)
-                # Флаг требования секрета (дефолт True) с корректным приведением типов
-                try:
-                    _rs_val = await svc.get_setting("phi.webhook.require_secret", _db, True)
-                    if isinstance(_rs_val, bool):
-                        require_secret = _rs_val
-                    else:
-                        _s = str(_rs_val).strip().lower()
-                        require_secret = not (_s in ("0", "false", "no", "off", ""))
-                except Exception:
-                    require_secret = True
-        except Exception:
-            expect = None  # type: ignore
-
-        if require_secret and (not sec or not expect or str(sec) != str(expect)):
-            try:
-                from .lib.observability.metrics import incr  # type: ignore
-                incr("webhook_phi_drop", {"reason": "no_or_bad_secret"})
-            except Exception:
-                pass
-            # Soft‑drop: подтверждаем Telegram, но не ставим в очередь
-            return {"status": "ok"}
-
-        # Безопасный парсинг тела
-        try:
-            raw = await request.body()
-        except Exception:
-            raw = b""
-        # Трассировка и базовый лог входа
-        try:
-            import uuid as _uuid
-            _trace_id = str(_uuid.uuid4())
-        except Exception:
-            _trace_id = ""
-        try:
-            ct = request.headers.get("content-type", "")
-            logger.info(f"[WEBHOOK_PHI] webhook_phi_received trace_id={_trace_id} method={request.method} path={request.url.path} len={len(raw)} ct={ct}")
-        except Exception:
-            pass
-        if not raw:
-            return {"status": "ok"}
-        try:
-            body = json.loads(raw.decode("utf-8"))
-        except Exception:
-            return {"status": "ok"}
-        if not isinstance(body, dict) or (("message" not in body) and ("callback_query" not in body)):
-            return {"status": "ok"}
-
-        # Публикуем событие во входную шину (rsbus) для изолированной обработки Phi
-        try:
-            from sqlalchemy import text as _text  # type: ignore
-            from .services.soul_settings_service import SoulSettingsService as _SS  # type: ignore
-            from .services.rsbus_client import rsbus_send  # type: ignore
-            async with get_db_session() as _dbi:  # type: ignore
-                svc = _SS()
-                phi_url = await svc.get_setting("bot.phi.api_url", _dbi, None)
-                if not phi_url:
-                    # fallback на старые ключи
-                    phi_url = await svc.get_setting("llm.phi.url", _dbi, None) or await svc.get_setting("llm.aux.url", _dbi, None)
-                # Извлечём chat/user/type и определим подвид kind
-                try:
-                    _msg = (body.get("message") or {}) if isinstance(body.get("message"), dict) else {}
-                    if not _msg and isinstance(body.get("callback_query"), dict):
-                        _msg = body.get("callback_query") or {}
-                    _chat_id = int((((_msg.get("chat") or {}).get("id")) or 0) or 0)
-                    try:
-                        _user_id = int(((_msg.get("from") or {}).get("id")) or 0)
-                    except Exception:
-                        _user_id = 0
-                    _mtype = "text"
-                    try:
-                        if "voice" in _msg:
-                            _mtype = "voice"
-                        elif "photo" in _msg:
-                            _mtype = "photo"
-                        elif "document" in _msg:
-                            _mtype = "document"
-                        elif "audio" in _msg:
-                            _mtype = "audio"
-                        elif "sticker" in _msg:
-                            _mtype = "sticker"
-                        elif "video" in _msg:
-                            _mtype = "video"
-                        elif "text" in _msg:
-                            _mtype = "text"
-                    except Exception:
-                        _mtype = "text"
-                except Exception:
-                    _chat_id, _user_id, _mtype = 0, 0, "text"
-                _kind = f"phi.chat.incoming.{_mtype}" if _mtype else "phi.chat.incoming.text"
-                payload = {
-                    "update": body,
-                    "bot_key": "phi",
-                    "bot_route": "/webhook/telegram/phi",
-                    "bot_provider": "aux",
-                    "bot_api_url": phi_url,
-                    "thread_type": "phi_chat",
-                    "chat_id": _chat_id,
-                    "user_id": _user_id,
-                    "message_type": _mtype,
-                    "trace_id": _trace_id,
-                }
-                # Обеспечим режим пользователя phi_chat для корректного выбора токена при локальном typing
-                try:
-                    if int(_user_id or _chat_id) > 0:
-                        from sqlalchemy import select as _select, update as _update  # type: ignore
-                        from .models import User as _U  # type: ignore
-                        row = await _dbi.execute(_select(_U).where(_U.tg_id == int(_user_id or _chat_id)))
-                        u = row.scalar_one_or_none()
-                        if u is not None and getattr(u, 'current_chat_mode', None) != 'phi_chat':
-                            await _dbi.execute(_update(_U).where(_U.id == u.id).values(current_chat_mode='phi_chat'))
-                            await _dbi.commit()
-                except Exception:
-                    pass
-                # Публикация в rsbus ingress (primary путь)
-                _addr = await svc.get_setting("rs.hyperloop.addr", _dbi, "unix:///run/soul/rsbus.dev.sock")
-                _timeout = int(await svc.get_setting("rs.hyperloop.timeout_ms", _dbi, 800))
-                _topic = f"comm.incoming.phi.{_mtype}"
-                _bus_res = await rsbus_send(op="comm.ingress", payload={"topic": _topic, "message": payload}, addr=str(_addr), timeout_ms=_timeout, trace_id=_trace_id)
-                try:
-                    logger.info(f"[WEBHOOK_PHI] phi_bus_publish trace_id={_trace_id} topic={_topic} ok={(bool((_bus_res or {}).get('ok')))}")
-                except Exception:
-                    pass
-                # Публикация typing-события в шину (легковесно) + безопасный локальный фоллбэк
-                try:
-                    _typing_enabled = bool(await svc.get_setting("comm.typing.enabled", _dbi, True))
-                except Exception:
-                    _typing_enabled = True
-                if _typing_enabled and _chat_id:
-                    try:
-                        _ttl_ms = 12000
-                        _ = await rsbus_send(op="comm.typing", payload={"bot_key": "phi", "chat_id": int(_chat_id), "ttl_ms": int(_ttl_ms)}, addr=str(_addr), timeout_ms=_timeout, trace_id=_trace_id)
-                        try:
-                            logger.info(f"[WEBHOOK_PHI] typing_bus_publish trace_id={_trace_id} chat_id={_chat_id} op=comm.typing")
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
-                    # Локальный короткий фоллбэк typing (до 15с) — управляется флагом
-                    try:
-                        _typing_fb = bool(await svc.get_setting("comm.typing.local_fallback", _dbi, False))
-                    except Exception:
-                        _typing_fb = False
-                    if _typing_fb:
-                        try:
-                            import asyncio as _aio
-                            from .telegram import send_chat_action_phi as _send_typing  # type: ignore
-                            async def _typing_loop_once(chat_id: int) -> None:
-                                end_ts = _aio.get_event_loop().time() + 15.0
-                                while _aio.get_event_loop().time() < end_ts:
-                                    try:
-                                        await _send_typing(chat_id, "typing")
-                                    except Exception:
-                                        pass
-                                    await _aio.sleep(4.0)
-                            _aio.create_task(_typing_loop_once(int(_chat_id)))
-                        except Exception:
-                            pass
-                # DB fallback по флагу (по умолчанию выключен)
-                try:
-                    _fb = await svc.get_setting("comm.fallback.db_enabled", _dbi, False)
-                except Exception:
-                    _fb = False
-                if bool(_fb) is True:
-                    _row = (
-                        await _dbi.execute(
-                            _text("insert into processor_events(kind, payload, status, priority) values (:k, CAST(:p AS jsonb), 'pending', 0) returning id::text"),
-                            {"k": _kind, "p": __import__("json").dumps(payload)},
-                        )
-                    ).fetchone()
-                    await _dbi.commit()
-                    try:
-                        _eid = (_row[0] if _row else None)
-                    except Exception:
-                        _eid = None
-                    try:
-                        logger.info(f"[WEBHOOK_PHI] phi_enqueue_ok trace_id={_trace_id} event_id={_eid} provider=aux api_url={phi_url}")
-                    except Exception:
-                        pass
-            try:
-                from .lib.observability.metrics import incr  # type: ignore
-                incr("webhook_phi_enqueued", {"route": "phi"})
-            except Exception:
-                pass
-        except Exception as _e_enqueue:
-            # Fallback — прямой вызов обработчика Phi (нежелательно, но безопасно)
-            try:
-                logger.error(f"[WEBHOOK_PHI] phi_enqueue_error trace_id={_trace_id} err={_e_enqueue}")
-            except Exception:
-                pass
-            try:
-                if telegram_phi is not None and hasattr(telegram_phi, "process_telegram_update_phi"):
-                    import asyncio as _aio
-                    _aio.create_task(telegram_phi.process_telegram_update_phi(body))
-                    try:
-                        logger.info(f"[WEBHOOK_PHI] fallback_direct_processing trace_id={_trace_id} scheduled=true")
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-        return {"status": "ok"}
-    except Exception:
-        return {"status": "ok"}
-
-# Удалён дублирующийся обработчик /webhook/telegram/phi — оставлен один с проверкой секрета
-
-# API alias для Пхи‑вебхука, совместимый с текущим Nginx /api/* прокси
-@app.api_route("/api/webhook/telegram/phi", methods=["POST", "GET", "HEAD"], include_in_schema=False)
-async def telegram_webhook_phi_api_alias(request: Request):
-    return await telegram_webhook_phi(request)
 
 @app.get("/api/metrics")
 async def get_metrics():
@@ -2203,6 +1724,19 @@ async def get_metrics():
                 cnt = (await db.execute(_t("select count(*) from processor_incidents where created_at >= :ts"), {"ts": since})).fetchone()  # type: ignore
                 n = int(cnt[0] if cnt and cnt[0] is not None else 0)
                 data["processor_incidents_rate_per_min"] = n / 10.0
+            # Aux LLM gauges (best-effort)
+            try:
+                data["llm_aux_latency_ms_p95"] = _m_get_percentile("llm_aux_latency_ms", {"route": "completion"}, 95.0) or 0.0
+            except Exception:
+                try:
+                    data["llm_aux_latency_ms_p95"] = _m_get_percentile("llm_aux_latency_ms", None, 95.0) or 0.0
+                except Exception:
+                    data["llm_aux_latency_ms_p95"] = 0.0
+            try:
+                data["llm_aux_req_total"] = _m_get_counter_total("llm_aux_req_total")
+                data["llm_aux_err_total"] = _m_get_counter_total("llm_aux_err_total")
+            except Exception:
+                pass
                 # p95 latency/guard/coverage (P21)
                 try:
                     from .lib.observability.metrics import get_percentile, get_percentile_by_tag  # type: ignore
@@ -2219,16 +1753,6 @@ async def get_metrics():
                     attr_enrich_p95 = get_percentile("attribute_enrich_ms", None, 95.0)
                     data["processor_p95"] = { **p95_latencies, "e2e_ms": e2e_p95, "guard_pass": guard_pass_p95, "coverage": coverage_p95 }
                     data["p95_attribute_enrich_ms"] = attr_enrich_p95
-                except Exception:
-                    pass
-
-                # P21: Delivery Guard — агрегаты по блокировкам ответов
-                try:
-                    from .lib.observability.metrics import get_counter_total as _ctr_tot, get_counter_by_tag as _ctr_by  # type: ignore
-                    data["replies_blocked_by_guard_total"] = int(_ctr_tot("replies_blocked_by_guard"))
-                    by_route = _ctr_by("replies_blocked_by_guard", "route") or {}
-                    if isinstance(by_route, dict):
-                        data["replies_blocked_by_guard_by_route"] = by_route
                 except Exception:
                     pass
 
@@ -2305,65 +1829,6 @@ async def get_metrics():
                 pass
         except Exception:
             pass
-        # P42: expose Aux LLM metrics (counters and p95 latency)
-        try:
-            from .lib.observability.metrics import get_counter_total as _ctr, get_percentile_all_tags as _pall  # type: ignore
-            data["llm_aux_req_total"] = int(_ctr("llm_aux_req_total"))
-            data["llm_aux_err_total"] = int(_ctr("llm_aux_err_total"))
-            data["llm_failover_used_total"] = int(_ctr("llm_failover_used_total"))
-            data["llm_aux_latency_ms_p95"] = _pall("llm_aux_latency_ms", 95.0) or 0.0
-        except Exception:
-            pass
-        # Lima (local LLaMA) health-check: lightweight TCP connect latency
-        try:
-            import socket as _sock
-            import time as _tm
-            from urllib.parse import urlparse as _uparse
-            base_url = None
-            timeout_ms = 500
-            try:
-                # Prefer settings service values if available
-                from .services.soul_settings_service import SoulSettingsService as _SSS  # type: ignore
-                async with get_db_session() as _db_sess:  # type: ignore
-                    try:
-                        _svc = _SSS()
-                        bu = await _svc.get_setting("lima.base_url", _db_sess)
-                        to = await _svc.get_setting("lima.timeout_ms", _db_sess)
-                        if isinstance(bu, (str,)) and bu:
-                            base_url = bu
-                        try:
-                            timeout_ms = int(to) if to is not None else timeout_ms
-                        except Exception:
-                            timeout_ms = timeout_ms
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            if not base_url:
-                data["lima_local_up"] = 0
-                data["lima_local_connect_ms"] = 0.0
-                return data
-            parsed = _uparse(str(base_url))
-            host = parsed.hostname
-            if not host:
-                data["lima_local_up"] = 0
-                data["lima_local_connect_ms"] = 0.0
-                return data
-            port = int(parsed.port or (443 if (parsed.scheme or "").lower() == "https" else 80))
-            t0 = _tm.time()
-            ok = 0
-            conn_ms = 0.0
-            try:
-                with _sock.create_connection((host, port), timeout=float(max(50, timeout_ms)) / 1000.0) as s:  # noqa: SIM115
-                    ok = 1
-                    conn_ms = (_tm.time() - t0) * 1000.0
-            except Exception:
-                ok = 0
-                conn_ms = 0.0
-            data["lima_local_up"] = int(ok)
-            data["lima_local_connect_ms"] = float(round(conn_ms, 3))
-        except Exception:
-            pass
         # Calendar aggregates
         try:
             from .lib.observability.metrics import get_counter_total as _get_cnt, get_percentile_all_tags as _p
@@ -2432,30 +1897,26 @@ async def bot_orchestrator_health():
                 except Exception:
                     token = ""
             if token:
-                import requests as __rq
+                # Читаем базовый URL Telegram API без хардкода (ENV → DB)
+                api_base = ""
                 try:
-                    from .config import get_settings as __gs_cfg
-                    _api_base = (__gs_cfg().telegram_api_base or '').rstrip('/')
+                    from .config import get_settings as __gs
+                    api_base = (getattr(__gs(), "telegram_api_base", "") or "").strip().rstrip("/")
                 except Exception:
-                    _api_base = ''
-                if not _api_base:
-                    # Читаем из DB настроек
+                    api_base = ""
+                if not api_base:
                     try:
-                        from .services.soul_settings_service import SoulSettingsService
-                        from .db import async_session_maker as __db
-                        _svc = SoulSettingsService()
-                        import asyncio as __aio
-                        async def __get():
-                            async with __db() as _s:
-                                return await _svc.get_setting('telegram.api_base', _s, None)
-                        _val = __aio.get_event_loop().run_until_complete(__get())
-                        _api_base = (_val or '').rstrip('/')
+                        from .db import async_session_maker as __sm  # type: ignore
+                        from .services.soul_settings_service import SoulSettingsService as __SSS  # type: ignore
+                        async with __sm() as __db:
+                            v = await __SSS().get_setting("telegram.api_base", __db, None)  # type: ignore[arg-type]
+                            api_base = (str(v or "").strip()).rstrip("/")
                     except Exception:
-                        _api_base = ''
-                if not _api_base:
-                    raise RuntimeError('telegram.api_base not configured')
-                r = __rq.get(f"{_api_base}/bot{token}/getWebhookInfo", timeout=5)
-                extra["webhook_info_ok"] = (r.status_code == 200)
+                        api_base = ""
+                if api_base:
+                    import requests as __rq
+                    r = __rq.get(f"{api_base}/bot{token}/getWebhookInfo", timeout=5)
+                    extra["webhook_info_ok"] = (r.status_code == 200)
         except Exception:
             pass
         # enrich with periodic external checks if available
@@ -2475,6 +1936,61 @@ from .models import User  # type: ignore
 from .middleware.rbac_middleware import require_permission  # type: ignore
 
 
+@app.get("/api/bot/orchestrator/queues")
+async def bot_orchestrator_queues():
+    """Обзор шардов оркестратора: paused/drop_on_pause/размеры очередей."""
+    try:
+        from .orchestrator import orchestrator as _orch
+        overview = _orch.queues_overview()
+        return {"status": "ok", "queues": overview}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/bot/orchestrator/pause")
+async def bot_orchestrator_pause(queue: str):
+    """Поставить указанный `queue` на паузу."""
+    try:
+        from .orchestrator import orchestrator as _orch
+        _orch.pause(queue)
+        return {"status": "ok"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/bot/orchestrator/resume")
+async def bot_orchestrator_resume(queue: str):
+    """Снять паузу с указанного `queue`."""
+    try:
+        from .orchestrator import orchestrator as _orch
+        _orch.resume(queue)
+        return {"status": "ok"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/bot/orchestrator/clear")
+async def bot_orchestrator_clear(queue: str):
+    """Очистить очереди и action‑очередь у шарда `queue` (операционно деструктивно)."""
+    try:
+        from .orchestrator import orchestrator as _orch
+        _orch.clear(queue)
+        return {"status": "ok"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/bot/orchestrator/set_drop_on_pause")
+async def bot_orchestrator_set_drop_on_pause(queue: str, value: bool):
+    """Установить политику `drop_on_pause` для шарда `queue`."""
+    try:
+        from .orchestrator import orchestrator as _orch
+        _orch.set_drop_on_pause(queue, value)
+        return {"status": "ok", "queue": queue, "drop_on_pause": bool(value)}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
 @app.post("/api/bot/orchestrator/start")
 async def bot_orchestrator_start(current_user: User = Depends(require_permission("soul.admin"))):
     try:
@@ -2489,160 +2005,6 @@ async def get_prometheus_metrics():
     """Метрики в формате Prometheus (интегрированные)."""
     try:
         metrics_data = metrics.get_metrics()
-        # Экспорт телеметрии кэша PromQL (если доступен)
-        try:
-            if promql_cache is not None:
-                t = promql_cache.telemetry()
-                if isinstance(t, dict):
-                    metrics_data.update(t)
-        except Exception:
-            pass
-        # Autoscale state (desired/current/decision_reason/cooldown) — best-effort read from APP state file
-        try:
-            import os as _os
-            autoscale_state_path = "/var/lib/soulpulse/rs_processor_autoscale.state"
-            if _os.path.exists(autoscale_state_path):
-                st: dict[str, str] = {}
-                with open(autoscale_state_path, "r", encoding="utf-8", errors="ignore") as f:
-                    for line in f:
-                        line = (line or "").strip()
-                        if not line or "=" not in line:
-                            continue
-                        k, v = line.split("=", 1)
-                        st[k.strip()] = v.strip()
-                # Map to metrics_data (do not fail on conversion)
-                try:
-                    metrics_data["autoscale_current_instances"] = int(st.get("current", "0") or 0)
-                except Exception:
-                    metrics_data["autoscale_current_instances"] = 0
-                try:
-                    metrics_data["autoscale_desired_instances"] = int(st.get("desired", "0") or 0)
-                except Exception:
-                    metrics_data["autoscale_desired_instances"] = 0
-                try:
-                    metrics_data["autoscale_cooldown_active"] = int(st.get("cooldown_active", "0") or 0)
-                except Exception:
-                    metrics_data["autoscale_cooldown_active"] = 0
-                try:
-                    metrics_data["autoscale_decision_reason"] = str(st.get("decision_reason", "idle") or "idle")
-                except Exception:
-                    metrics_data["autoscale_decision_reason"] = "idle"
-                # Optionally expose last observed queue for gauges
-                try:
-                    metrics_data["processor_queue_len"] = int(st.get("last_queue_len", "0") or 0)
-                except Exception:
-                    pass
-        except Exception:
-            # Never break exporter on optional autoscale enrichments
-            pass
-        # Добавим метрики относительной утилизации CPU относительно квоты cgroup
-        try:
-            from .lib.system.cpu_quota import compute_relative_usage_percent, read_cgroup_quota_cores, read_host_cores  # type: ignore
-            rel_pct, quota_cores, host_cores = compute_relative_usage_percent()
-            # В PlainText Prometheus стиле: gauge-метрики
-            # Присоединим в конец текста ниже через metrics exporter
-            try:
-                from .lib.observability.metrics import p_gauge_set  # type: ignore
-                p_gauge_set("cpu_quota_effective_cores", float(quota_cores), None)
-                p_gauge_set("cpu_host_cores", float(host_cores), None)
-                p_gauge_set("cpu_usage_percent_relative_to_quota", float(rel_pct), None)
-            except Exception:
-                pass
-        except Exception:
-            pass
-        # Дополняем метрики Aux LLM и LIMA (локальная LLaMA) для экспорта Prometheus
-        try:
-            # Aux LLM counters и p95
-            from .lib.observability.metrics import get_counter_total as _ctr, get_percentile_all_tags as _pall  # type: ignore
-            try:
-                metrics_data["llm_aux_req_total"] = int(_ctr("llm_aux_req_total"))
-            except Exception:
-                metrics_data["llm_aux_req_total"] = 0
-            try:
-                metrics_data["llm_aux_err_total"] = int(_ctr("llm_aux_err_total"))
-            except Exception:
-                metrics_data["llm_aux_err_total"] = 0
-            try:
-                metrics_data["llm_failover_used_total"] = int(_ctr("llm_failover_used_total"))
-            except Exception:
-                metrics_data["llm_failover_used_total"] = 0
-            try:
-                metrics_data["llm_aux_latency_ms_p95"] = float(_pall("llm_aux_latency_ms", 95.0) or 0.0)
-            except Exception:
-                metrics_data["llm_aux_latency_ms_p95"] = 0.0
-            # Phi remediation/health counters for alerts
-            try:
-                metrics_data["phi_health_fail_total"] = int(_ctr("phi_health_fail_total"))
-            except Exception:
-                metrics_data["phi_health_fail_total"] = 0
-            try:
-                metrics_data["phi_remediation_restart_total"] = int(_ctr("phi_remediation_restart_total"))
-            except Exception:
-                metrics_data["phi_remediation_restart_total"] = 0
-        except Exception:
-            pass
-        try:
-            # LIMA (локальная LLaMA) — TCP connect health/latency (best-effort, без await)
-            import socket as _sock
-            import time as _tm
-            from urllib.parse import urlparse as _uparse
-            base_url = None
-            timeout_ms = 500
-            try:
-                from .services.soul_settings_service import SoulSettingsService as _SSS  # type: ignore
-                async with get_db_session() as _db_sess:  # type: ignore
-                    try:
-                        _svc = _SSS()
-                        bu = await _svc.get_setting("lima.base_url", _db_sess)
-                        to = await _svc.get_setting("lima.timeout_ms", _db_sess)
-                        if isinstance(bu, (str,)) and bu:
-                            base_url = bu
-                        try:
-                            timeout_ms = int(to) if to is not None else timeout_ms
-                        except Exception:
-                            timeout_ms = timeout_ms
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            if not base_url:
-                metrics_data["lima_local_up"] = 0
-                metrics_data["lima_local_connect_ms"] = 0.0
-            else:
-                parsed = _uparse(str(base_url))
-                host = parsed.hostname
-                if not host:
-                    metrics_data["lima_local_up"] = 0
-                    metrics_data["lima_local_connect_ms"] = 0.0
-                else:
-                    port = int(parsed.port or (443 if (parsed.scheme or "").lower() == "https" else 80))
-                    t0 = _tm.time()
-                    ok = 0
-                    conn_ms = 0.0
-                    try:
-                        with _sock.create_connection((host, port), timeout=float(max(50, timeout_ms)) / 1000.0):  # noqa: SIM115
-                            ok = 1
-                            conn_ms = (_tm.time() - t0) * 1000.0
-                    except Exception:
-                        ok = 0
-                        conn_ms = 0.0
-                    metrics_data["lima_local_up"] = int(ok)
-                    metrics_data["lima_local_connect_ms"] = float(round(conn_ms, 3))
-        except Exception:
-            pass
-        # Net private link inspector (best-effort): expose private_link_ok
-        try:
-            from .feature_plugins import net_private_link as _npl  # type: ignore
-            async with get_db_session() as _db_sess:  # type: ignore
-                res = await _npl.run(_db_sess, context={"source": "prom_export"})
-                try:
-                    m = res.get("metrics", {}) if isinstance(res, dict) else {}
-                    plo = int(m.get("private_link_ok", 0)) if isinstance(m.get("private_link_ok", 0), (int, float)) else 0
-                except Exception:
-                    plo = 0
-                metrics_data["private_link_ok"] = plo
-        except Exception:
-            pass
         return format_metrics_for_prometheus(metrics_data)
     except Exception as e:
         logger.warning(f"prometheus endpoint error: {e}")
@@ -2722,107 +2084,6 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-@app.api_route("/webhook/telegram/{bot_key}", methods=["POST", "GET", "HEAD"], include_in_schema=False)
-async def telegram_webhook_generic(bot_key: str, request: Request):
-    try:
-        if request.method in ("GET", "HEAD"):
-            return {"status": "ok"}
-        # parse raw
-        try:
-            raw = await request.body()
-        except Exception:
-            raw = b""
-        body = {}
-        if raw:
-            try:
-                body = json.loads(raw.decode("utf-8"))
-            except Exception:
-                return {"status": "ok"}
-        if not isinstance(body, dict) or (("message" not in body) and ("callback_query" not in body)):
-            return {"status": "ok"}
-        # optional secret validation: telegram.{bot_key}.secret_token or bot.secret.{bot_key}
-        try:
-            sec_hdr = request.headers.get("x-telegram-bot-api-secret-token") or request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-            from .services.secrets_service import SecretsService as _Sec  # type: ignore
-            from .services.soul_settings_service import SoulSettingsService as _SS  # type: ignore
-            async with get_db_session() as _db:  # type: ignore
-                _se = _Sec()
-                expect = await _se.get_secret(_db, f"bot.secret.{bot_key}")
-                svc = _SS()
-                if not expect:
-                    expect = await svc.get_setting(f"bot.secret.{bot_key}", _db, None)
-                if not expect:
-                    expect = await svc.get_setting(f"telegram.{bot_key}.secret_token", _db, None)
-            if expect and (not sec_hdr or str(sec_hdr) != str(expect)):
-                return {"status": "ok"}
-        except Exception:
-            pass
-        # extract fields
-        try:
-            _msg = (body.get("message") or {}) if isinstance(body.get("message"), dict) else {}
-            if not _msg and isinstance(body.get("callback_query"), dict):
-                _msg = body.get("callback_query") or {}
-            _chat_id = int((((_msg.get("chat") or {}).get("id")) or 0) or 0)
-            try:
-                _user_id = int(((_msg.get("from") or {}).get("id")) or 0)
-            except Exception:
-                _user_id = 0
-            _mtype = "text"
-            try:
-                if "voice" in _msg:
-                    _mtype = "voice"
-                elif "photo" in _msg:
-                    _mtype = "photo"
-                elif "document" in _msg:
-                    _mtype = "document"
-                elif "audio" in _msg:
-                    _mtype = "audio"
-                elif "sticker" in _msg:
-                    _mtype = "sticker"
-                elif "video" in _msg:
-                    _mtype = "video"
-                elif "text" in _msg:
-                    _mtype = "text"
-            except Exception:
-                _mtype = "text"
-        except Exception:
-            _chat_id, _user_id, _mtype = 0, 0, "text"
-        try:
-            import uuid as _uuid
-            _trace_id = str(_uuid.uuid4())
-        except Exception:
-            _trace_id = ""
-        payload = {
-            "update": body,
-            "bot_key": bot_key,
-            "bot_route": f"/webhook/telegram/{bot_key}",
-            "bot_provider": "telegram",
-            "bot_api_url": None,
-            "thread_type": "chat",
-            "chat_id": _chat_id,
-            "user_id": _user_id,
-            "message_type": _mtype,
-            "trace_id": _trace_id,
-        }
-        # publish to rsbus
-        from .services.soul_settings_service import SoulSettingsService as _SS2  # type: ignore
-        from .services.rsbus_client import rsbus_send  # type: ignore
-        async with get_db_session() as _dbi:  # type: ignore
-            _svc2 = _SS2()
-            _addr = await _svc2.get_setting("rs.hyperloop.addr", _dbi, "unix:///run/soul/rsbus.dev.sock")
-            _timeout = int(await _svc2.get_setting("rs.hyperloop.timeout_ms", _dbi, 800))
-            _topic = f"comm.incoming.{bot_key}.{_mtype}"
-            _ = await rsbus_send(op="comm.ingress", payload={"topic": _topic, "message": payload}, addr=str(_addr), timeout_ms=_timeout, trace_id=_trace_id)
-            # optional DB fallback by flag (default=false)
-            try:
-                fb = await _svc2.get_setting("comm.fallback.db_enabled", _dbi, False)
-            except Exception:
-                fb = False
-            if bool(fb) is True:
-                from sqlalchemy import text as _text  # type: ignore
-                await _dbi.execute(_text("insert into processor_events(kind, payload, status, priority) values (:k, CAST(:p AS jsonb), 'pending', 0)"), {"k": f"{bot_key}.chat.incoming.{_mtype}", "p": __import__("json").dumps(payload)})
-                await _dbi.commit()
-        return {"status": "ok"}
-    except Exception:
-        return {"status": "ok"}
-
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

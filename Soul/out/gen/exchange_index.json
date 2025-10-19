@@ -1,0 +1,8 @@
+{
+  "topic": "exchange",
+  "total_lines": 120,
+  "shard_lines": 120,
+  "shards": [
+    "Soul\\out\\gen\\exchange_shard_00000.jsonl"
+  ]
+}
