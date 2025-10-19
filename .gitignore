@@ -1,0 +1,68 @@
+﻿# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.iml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node/Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Build/Artifacts
+out/
+out_*/
+dist/
+build/
+.tmp*/
+.tmp_ci/
+.tmp_push/
+.tmp/
+
+# Backups/Cache/Secrets (tracked locally only)
+backups/
+Server-TMP/
+secrets/
+registry/
+ops/tmpfiles.d/
+ops/tmp/
+tmp/
+*.log
+*.bak
+*.tmp
+*.cache
+
+# Binary blobs
+*.db
+*.tar
+*.zip
+*.7z
+*.exe
+*.dll
+*.pdb
+*.so
+*.dylib
+
+# Local configs
+*.env
+*.local
+.env*
+remote_env.prod
+
+# Coverage/Reports
+coverage/
+reports/
+
+# Rust target
+rs/rsbus/target/
+
+# Ignore large vendored archives
+**/vendor/
