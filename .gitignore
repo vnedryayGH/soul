@@ -66,3 +66,10 @@ rs/rsbus/target/
 
 # Ignore large vendored archives
 **/vendor/
+
+# Additional build/snapshot artifacts
+frontend/dist.new/
+backend/app.bak_/
+
+# Root temporary files
+/tmp_*
