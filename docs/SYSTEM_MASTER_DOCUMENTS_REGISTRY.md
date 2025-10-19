@@ -1,9 +1,9 @@
 # SYSTEM MASTER DOCUMENTS REGISTRY
 
-Last update: 2025-10-19 (GitHub Admin CLI consolidated; runbooks added; P63 Recovery quick path executed)
+Last update: 2025-10-19 (Hyperloop 502 postmortem added; systemd/nginx/RS policies synced; GitHub Admin CLI consolidated)
 
 - P63 Recovery — Final Report: `docs/P63_RECOVERY_FINAL_REPORT_2025-10-19.md`
-
+- Hyperloop 502 — Postmortem: `docs/POSTMORTEM_2025-10-19_Hyperloop_502.md`
 ## P62 — Admin/Edge readiness and smoke results
 
 - Edge OpenAPI available at `/api/openapi.json`; routes introspection at `/api/debug/routes`.
@@ -73,6 +73,7 @@ Artifacts:
 - `diamond.pipeline.health`: semantics aligned — when errors=0 and pending>threshold → status=warn; thresholds are read from inspector config/context.
 - `p47_webauth_health`: added soft‑skip via `webauth.enabled=false` in DB; partial warn path for cookie attributes; avoids false fail on non‑JSON responses.
 - RS canary policy: `rs.hyperloop.canary_share=0.05` fixed; observe p95/429 for 10–15m, then AIMD escalate under SLA.
+  - Added hygiene for Linux deploy: CRLF→LF for `venv/bin/*`, `chmod 755` for `python*`/`uvicorn`.
 - E2E smoke trace recorded via `CORE.PIPELINE.RUN ... WITH TRACE` and verified with `TRACE.STEPS`.
 
 ### 2025‑10‑18 — P30 Queue/Diagnostics publish & runtime tuning
@@ -103,10 +104,16 @@ Artifacts:
 - `POST /api/aux-llm/completion` — server-side proxy; keys and base URLs read from DB
 - Инфраструктурная политика/размещение: см. `docs/INFRA_LLM_AUX_PLACEMENT_v1_0.md` (APP1=BF16, APP2/DB — не размещать сервис)
 - DeepSeek KeyMaster smoke: `GET /api/admin/soul/llm/test?provider=deepseek` — requires `deepseek_api_key` secret (Two-Keys for `SECRET.SET`)
+- Восстановление Aux LLM (2025‑10‑19): юнит активен на APP1; ключи в БД — `llm.aux.url=http://127.0.0.1:8085`, `lima.timeout_ms=90000`; алерты Prometheus для Aux применены (`ops/prometheus/rules_aux.yml`).
 
 ## Dev Access — routes/health (P63)
 
-- `GET /api/admin/access/health` — возвращает агрегаты инспектора dev_access.health; метрика `dev_access_health_ms` добавляется через общий мониторинг (см. backend `monitoring`).
+- `GET /api/admin/access/health` — инспектор `dev_access.health` с эмиссией метрик:
+  - `dev_access_health_status` (Gauge: 1 — passed, 0 — failed)
+  - `dev_access_health_ms` (Histogram, ms)
+- Алерты Prometheus: `ops/prometheus/rules_dev_access.yml`
+  - `DevAccessHealthFailed` — статус = 0 > 2m
+  - `DevAccessHealthSlow` — p95(`dev_access_health_ms`) > 500ms > 5m
 - CLI (безопасно, PowerShell‑френдли):
   - `python Soul/scripts/hyperloop_cli.py --dsl INSPECTOR.RUN key=dev_access.health`
   - `python Soul/scripts/hyperloop_cli.py --secrets-set-b64 --secret-key github.app.private_key --secret-b64 <BASE64>`
