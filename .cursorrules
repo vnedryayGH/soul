@@ -1,0 +1,453 @@
+# Cursor System Rules — SoulPulse
+
+These rules are applied by Cursor to all LLM agents working in this workspace. Keep them concise, enforceable, and self‑contained. Update with each process change without regressions.
+
+## Global (applies to the entire repo)
+- Role: Lead LLM engineer full‑cycle (analyze → design → implement → test → document → report). No stubs. No functionality regressions.
+- STRICT JSON everywhere for machine outputs; Delivery Guard (P27) chain required before visible replies.
+- All data/settings are read/written only via DB; no local JSON as source of truth.
+- Prioritize visualization fixes when choosing between tasks (if relevant to UX/UI).
+- Observability: record signature steps, incidents, and p95 stage metrics.
+ - Observability/Alerts: все алерты должны быть понятны (human‑readable), содержать уровень риска и предлагать действия. В аннотациях указывать: severity/risk и пошаговые рекомендации. Пример: `AgeSyncLagCritical` — снизить load, проверить Postgres (locks/WAL/disk), эскалировать P50.
+- Mandatory Soul Project Branch: every LLM action MUST run under a claimed project branch (P40 §2.1, §2.3 for quick commands). Before starting work, run `INSPECTOR.RUN key=plan.branch action=claim_branch ...`; after completion, `... action=release_branch ...`. Requests without active branch MUST be rejected by agents.
+- Incident-first workflow (P50): All non-trivial issues, regressions, inspector violations (P27/P29/P30/P21) MUST be handled via Incidents. Use `INCIDENT.*` DSL or `/api/admin/incidents*` endpoints; ensure timeline events (`incident_events`) are written for escalations/closures; severity 1–2 changes require Two‑Keys. Smoke scenarios on PROD (create→event→close) are preferred for validations.
+- Mandatory Prompt Autoload: Cursor/LLM agents MUST autoload the development rules prompt on every request. The prompt MUST include: branching rules (P40), document structure and registry (`docs/SYSTEM_MASTER_DOCUMENTS_REGISTRY.md`), and Project Module structure (P40 §3). Agents MUST mirror actions via `LLM.MIRROR` (P48).
+- Hyperloop CLI is mandatory: all DSL/management requests MUST be executed via `python Soul/scripts/hyperloop_cli.py` over the Soul Hyperloop channel. Direct `Invoke-RestMethod`/`curl.exe` HTTP calls are allowed only as fallbacks during CLI degradation.
+
+- Safe Deletions Policy (Windows dev workspace): agents MUST NOT perform hard deletes of files/directories under the workspace. Any deletion requirement must be executed only via OS Recycle Bin (use scripts `scripts/safe_delete.ps1` for files and `scripts/safe_delete_dir.ps1` for directories). Bulk removals and recursive purges are forbidden. Manual user deletions are allowed; agents must avoid any destructive delete actions.
+
+### APP Servers Execution Policy (no local loops)
+- Background/long‑running processes (e.g., AGE sync ticks, dispatcher loops, timers, batch ingest, Hyperloop runners) MUST run ONLY on APP servers. Local workstation MUST NOT run any persistent loops or background workers.
+- Canonical APP servers for execution: 217.12.38.238 and 46.173.24.4. Management from local is allowed (one‑shot DSL, inspections, flags), but execution must be server‑side.
+- Process management MUST use systemd units on APP servers (start/stop/status via `systemctl` and logs via `journalctl`). Do NOT use local PowerShell/BAT while‑loops or auto‑restart constructs.
+- If a local loop/process is detected (e.g., `hyperloop_cli.py` loops, `AGE.SYNC` ticks, `python -c` spawners), it MUST be terminated immediately and moved to APP servers under systemd.
+
+### Canonical addresses/ports/secrets — mandatory policy
+- No hardcoded URLs/domains/ports/paths in code or scripts (except docs/tests/examples). BANNED patterns in sources: `http://`, `https://`, `:\d{2,5}` and known domains (e.g. `mini.soulpulse.art`, `grafana`, `telegram`, `127.0.0.1`) — all must be read from DB.
+- All addresses/ports/paths must be read via `SoulSettingsService` (`soul_settings`), all tokens/credentials via `SecretsService` (`soul_secrets`).
+- Canonical registry keys MUST be used (examples):
+  - `api.base_url`, `api.health_path`, `metrics.prometheus_path`
+  - `grafana.base_url`, `grafana.provisioning_path`, `grafana.dashboard_dir`
+  - `nginx.site.conf_path`, `nginx.grafana.location_enabled`
+  - `lima.base_url`, `lima.api.list_endpoint`, `lima.timeout_ms`, `lima.max_retries`
+  - `rs.hyperloop.mode`, `rs.hyperloop.canary_share`
+  - `db.dsn` (read‑only), `age.graph_name`, `age.sync.period_sec`
+  - `guardian.storage.source_path`, `guardian.storage.secure_key_path`, `guardian.storage.encrypted_path`, `guardian.storage.restored_path`
+  - Telegram/LLM base URLs (runtime): `telegram.api_base`, `openai.api_url`, `openai.whisper_api_url`, `deepseek.api_url`
+  - CSP dynamic allowlists (arrays): `csp.allowed_script_hosts`, `csp.allowed_style_hosts`, `csp.allowed_img_hosts`, `csp.allowed_connect_hosts`, `csp.allowed_font_hosts`, `csp.allowed_frame_hosts`, `csp.allowed_frame_ancestors`
+- Secrets examples (in `soul_secrets`): `bot.token.*`, `jwt.secret*`, `hf.api_token`, `deepseek_api_key`, `openai_api_key`, `gigachat_*`, `yandex_speechkit_*`, `db.password*`, `hyperloop_api_*`.
+- PR acceptance: `grep` over code must not find banned patterns except in docs/tests. Inspectors should enforce `guard.canonical.urls` and incident on violation.
+
+- Inspector scopes/policies:
+  - `guard.canonical.scan_roots` default: `["backend/app/"]`; avoid scanning docs/examples to reduce false positives
+  - `guard.canonical.path_whitelist`: add regex for docs/examples/tests: `^docs/.+`, `^deploy/.+`, `^ops/.+`, `^scripts/.+`, `^frontend/.+`, `backend/app/prompts/.+`, `backend/app/gendarme_tests/.+`
+  - For seeds/ENV examples (DSN/localhost) ensure they are placed under whitelisted paths only
+
+### Agent Entry Points (Cursor)
+- Canonical config in DB (via `SoulSettingsService`):
+  - `api.base_url`, `grafana.base_url`, `lima.base_url`, `cors.allowed_origins`
+  - Canonical inspector config: `guard.canonical.enabled`, `guard.canonical.enforce`, `guard.canonical.regex_whitelist`, `guard.canonical.path_whitelist`
+- Backend endpoints (FastAPI):
+  - Health/metrics: `/api/health`, `/api/metrics`, `/api/metrics/prometheus`
+  - Telegram webhook: `/webhook/telegram`
+  - LIMA ingest: `POST /api/admin/training/ingest`
+  - Aux LLM (server-side proxy, reads DB keys `lima.base_url`, `lima.timeout_ms`):
+    - Health: `GET /api/aux-llm/health`
+    - Completion: `POST /api/aux-llm/completion`
+  - Secrets (admin, Key Master via DB):
+    - `POST /api/admin/soul/secrets/set` (writes to `public.soul_secrets` using pgcrypto)
+    - `GET /api/admin/soul/secrets/exists?key=<k>` (boolean existence, no value)
+    - `GET /api/admin/soul/settings/get_kv?key=<k>` (diagnostic read of `soul_settings`)
+- Nginx (edge proxy): `/etc/nginx/sites-enabled/03-mini_soulpulse.conf`
+  - Proxies: `/api/* → 127.0.0.1:8000`, `/grafana/ → 127.0.0.1:3001`, `/webhook/telegram → 127.0.0.1:8000/webhook/telegram`
+  - Deploy checks: `nginx -t && systemctl reload nginx`
+- Grafana/Prometheus:
+  - Dashboards JSON: `ops/grafana/*.json` (provisioned)
+  - Alerts: `ops/prometheus/*.yml`
+  - Base URL key: `grafana.base_url`
+- Canonical Inspector (Guard):
+  - Run: `INSPECTOR.RUN key=guard.canonical.urls`
+  - Findings should not include hardcoded `http(s)://`, literal ports `:\d{2,5}`, or known domains/IPs; fix by reading from DB via `SoulSettingsService`/`SecretsService` or by whitelist where appropriate (docs/tests/examples only)
+  - Secrets/Key Master policy:
+    - Storage: all secrets are stored encrypted in `public.soul_secrets` (pgcrypto), master key is `soul_settings.secrets.master_key`.
+    - DSL:
+      - `SCHEMA.SECRETS.ENSURE` — ensures pgcrypto/table
+      - `SECRET.SET key=<k> value="..."` — writes encrypted secret (Two‑Keys for sensitive where applicable)
+      - `SECRET.GET key=<k>` — returns `{ exists: bool, preview: masked }`; existence is determined by presence in `soul_secrets` (with safe fallback to `soul_settings` presence only for boolean), value is never returned
+    - Do not log or expose secret values; use admin endpoints or DSL only.
+- CORS:
+  - Allowed origins are read from DB key `cors.allowed_origins` (array). No `*`. If empty, CORS disabled by default.
+- Hyperloop CLI quick flags (Windows PowerShell safe):
+  - `python .\Soul\scripts\hyperloop_cli.py --dsl "FLAGS.SET key=api.base_url value=\"https://mini.soulpulse.art\""`
+  - `python .\Soul\scripts\hyperloop_cli.py --dsl "FLAGS.SET key=grafana.base_url value=\"https://mini.soulpulse.art/grafana\""`
+  - `python .\Soul\scripts\hyperloop_cli.py --dsl "FLAGS.SET key=lima.base_url value=\"http://127.0.0.1:3000\""`
+  - To set arrays (e.g., CORS): use `FLAGS.SET key=cors.allowed_origins value='[\n  \"https://mini.soulpulse.art\"\n]'`
+- Do not hardcode `mini.soulpulse.art` or local IPs/ports in code; always read from DB. Docs/tests/examples may show values but should be in inspector whitelist.
+  - Quoting‑safe mode: prefer `--commands "<DSL>"` for simple commands and `--options-json-file` for JSON payloads; increase `--timeout` on unstable links.
+  - Aux LLM public checks (with required header `X-Telegram-User-ID`): `GET /api/aux-llm/health`, `POST /api/aux-llm/completion`.
+
+## Planning (P40) — mandatory development plan
+- Every change MUST go through the unified internal plan registry (P40). Create/link `plan_task.id` before work; include it in commits/PRs/docs and in `payload.plan.task_id` of related Quants.
+- Required links (coverage): for each task, at least one link to `skills`/profession/specialization (P25) and at least one Quant with `implements|assesses`. Duplicates are blocked by dedup key.
+- Enforce with inspector: run `planning.enforce` (and `INSPECTOR.RUN_ALL`) regularly; fix violations immediately.
+- Branching/locks: before starting work, claim a semantic branch and/or a plan task lock via `INSPECTOR.RUN key=plan.branch action=claim_branch|claim_task ...`; release on completion. TTL defaults to 48h. Conflicts return `conflict` with current owner.
+
+### Planning (P40) — подключение и запросы (получение/обновление информации)
+- Подключение (RBAC `soul.admin`): использовать `POST /api/hyperloop/execute` с заголовком `X-Telegram-User-ID`.
+- Формат тела: строго `{ "commands": "<одна строка DSL>" }` или `{ "commands": "...", "options": { ... } }`.
+- Быстрый контур (см. P40 §2.3, Windows PowerShell):
+  - Ветка/сессия: `INSPECTOR.RUN key=plan.branch action=claim_branch owner=\"<tg_id>\" branch=\"<area/module/topic>\" topic=\"<t>\" session=\"<sid>\"` (обязательно) или `DEV.CONNECT owner=\"<tg_id>\" branch=\"<key>\"` (fast‑path, опционально)
+  - Чтение: `PROJECT.LIST`, `INSPECTOR.RUN key=planning.enforce`
+  - Изменения: `PROJECT.CREATE ...`, `PLAN.TASK.ADD ...`, `PLAN.CPM.CALC ... WITH TRACE`
+  - Зеркало: `LLM.MIRROR owner=... branch=...`
+  - Освобождение ветки: `SESSION.RELEASE branch=\"<key>\"`
+- Базовые чтения (без побочных эффектов):
+  - `PROJECT.LIST`
+  - `PROJECT.GET id=<pid>`
+  - `INSPECTOR.RUN key=planning.enforce`
+- Изменения (через DSL, с подписью P27, Two‑Keys для опасных):
+  - `PROJECT.CREATE name="..." [methodology=hybrid] [priority=0.8] [owner=<tg>]`
+  - `PLAN.TASK.ADD project_id=<pid> title="..." [cpm_duration_days=<float>]`
+  - `PLAN.TASK.DEPEND predecessor=<tid> successor=<tid> dep_type=<FS|SS|FF|SF>`
+  - `TASK.UPDATE id=<tid> payload={...}` (частичное обновление)
+  - `PLAN.CPM.CALC project_id=<pid> WITH TRACE` (расчёт, read‑only запись подписи)
+- Примеры PowerShell (Windows):
+  - Список проектов:
+    - `powershell -NoProfile -Command "$H=@{ 'X-Telegram-User-ID'='468326902' }; $B=@{ commands='PROJECT.LIST' } | ConvertTo-Json -Compress; Invoke-RestMethod -Uri 'https://mini.soulpulse.art/api/hyperloop/execute' -Headers $H -Method Post -ContentType 'application/json' -Body $B | ConvertTo-Json -Compress"`
+  - Добавить задачу и посчитать CPM:
+    - `powershell -NoProfile -Command "$H=@{ 'X-Telegram-User-ID'='468326902' }; $C='PLAN.TASK.ADD project_id=\"<PID>\" title=\"CPM расчёт\" cpm_duration_days=2.5'; $B=@{ commands=$C } | ConvertTo-Json -Compress; Invoke-RestMethod -Uri 'https://mini.soulpulse.art/api/hyperloop/execute' -Headers $H -Method Post -ContentType 'application/json' -Body $B | ConvertTo-Json -Compress"`
+    - `powershell -NoProfile -Command "$H=@{ 'X-Telegram-User-ID'='468326902' }; $C='PLAN.CPM.CALC project_id=\"<PID>\" WITH TRACE'; $B=@{ commands=$C } | ConvertTo-Json -Compress; Invoke-RestMethod -Uri 'https://mini.soulpulse.art/api/hyperloop/execute' -Headers $H -Method Post -ContentType 'application/json' -Body $B | ConvertTo-Json -Compress"`
+- Обновление ТЗ и проектной БД (правило «по факту»):
+  - Любые изменения логики или сущностей сначала фиксируются в соответствующем P‑ТЗ (здесь: `Soul/P40_TZ_Project_Management_Soul_v1_0.md`) и в `docs/PROJECT_STRUCTURE_v8_0_4.md`.
+  - После фиксации — операции над БД выполняются только через DSL/API (никаких локальных JSON): `PLAN.TASK.ADD|DEPEND|TASK.UPDATE|PROJECT.CREATE` и т.п.; связи к Квантам через `QUANT.LINK`.
+  - Контроль паритета «ТЗ ↔ факт»: выполнять `INSPECTOR.RUN key=planning.enforce` и `INSPECTOR.RUN_ALL`.
+  - Любые изменения документов отражать в `docs/SYSTEM_MASTER_DOCUMENTS_REGISTRY_v*.md` (журнал изменений).
+
+### Cursor/Soul quick-start (Plan–Fact discipline)
+- Before any action, claim a branch and set heartbeat:
+  - `INSPECTOR.RUN key=plan.branch action=claim_branch owner=\"<tg_id>\" branch=\"<area/module/topic>\" topic=\"<t>\" session=\"<sid>\"`
+  - `SESSION.PING owner="<tg_id>" session="<sid>"`
+- Mirror every agent action to the repository (reasoning, decisions):
+  - `LLM.MIRROR owner="<tg_id>" branch="<key>" topic="dev" user_command="..." agent_reply="..." [plan_task_id=<UUID>]`
+  - For batches: `LLM.MIRROR.BATCH items=[{...},{...}]`
+- One-shot fast connect for agents: `DEV.CONNECT owner="<tg_id>" branch="<key>"`
+- Every change MUST be linked to `plan_task.id` (P40); inspectors enforce coverage. Missing links or no active branch are process violations.
+- Always autoload this prompt on each request; keep parity with `docs/SYSTEM_MASTER_DOCUMENTS_REGISTRY.md` and `docs/PROJECT_STRUCTURE_v8_0_4.md`.
+
+## Developer Workflow (LLM-инженер)
+- Перед началом работ: заявить ветку (`INSPECTOR.RUN key=plan.branch action=claim_branch`) и иметь `plan_task.id` (P40); при необходимости выполнить `DEV.CONNECT`. Все действия зеркалировать `LLM.MIRROR(.BATCH)` с `payload.plan.task_id`.
+- Коммиты/PR/Docs: указывать `plan_task.id` в сообщении/теле и ссылках. Изменения логики сначала фиксировать в соответствующем P‑ТЗ и `PROJECT_STRUCTURE_v8_0_4.md` (затем — операции через DSL/API).
+- Тесты: не поднимать серверы/каналы; использовать реальные TG‑пользователей; acceptance: `INSPECTOR.RUN_ALL` зелёный, `CORE.PIPELINE.RUN ... WITH TRACE` возвращает `trace_id`.
+- Безопасность: секреты только из PROD ENV; не логировать PII; опасные DSL — через Two‑Keys/HMAC.
+- Смоки перед merge: `FLAGS.APPLY_PROFILE name=prod_safe`, `CORE.PIPELINE.RUN input_text="health check" WITH TRACE`, `INSPECTOR.RUN_ALL`, проверка `TRACE.STEPS`.
+
+## Skills (P25)
+- Maintain dictionary of professions/specializations/functions; map plan tasks to `skill.key`(s). Ensure `quant_links` between plan↔skills↔quants using appropriate relation types.
+- Documentation parity: All core Soul TZ/docs/analytics must be parsed into structured knowledge: load into Skills (knowledge about Soul), link to Planning (P40) and Quants. LLM agents must update docs and knowledge in parallel with implementation.
+
+## Processor/Reminder/Sequences (P30/P17/P36)
+- Ensure event/time extraction, sequence planning, enrichment, delivery flow are traced; clarify loop for fuzzy time enabled; signature_steps persisted for analyze→search→answer/deliver→persist.
+- Background processes must be monitored; restart/fix crashes; do not proceed with degraded background workers.
+
+## Neuro‑Integrity / Sleep (P46/P16/P38)
+- Run NeuroIntegrity checks during Sleep and after batch ingest; log aggregates and dangling links.
+- Sleep emotion calibration: external Quants energy/emotion capped (e.g., ≤ 0.55), internal ≥ 0.6; batch alignment with audit.
+
+## Ingest/Quants (P45)
+- File‑based batch ingest via JSONL only; valid UUIDs for `quants.id`. Build `payload.plan` and `payload.skill` and link to goals/projects. Batches use multi‑threading with AIMD or adaptive throttling; measure throughput.
+- No degradation: if data expected in DB, locate migrated tables and linkages; do not create placeholders.
+- Quality gates (mandatory): ban placeholder steps like "Шаг 1/2/3..." / "Step 1/2/3..." without concrete actions, objects, and acceptance criteria. Only valuable, actionable content with explicit links to plan/skills/goals.
+
+## RBAC/Access (P44)
+- Use `require_role_or_higher("premium")` for restricted endpoints; Architect/Soul/Admin are higher and must not be blocked.
+- Sensitive ops via Two‑Keys/HMAC where applicable; log decisions; avoid exposing internal modules in user replies.
+
+## Rate Limits / Hyperloop (P36/P41)
+- Quant loading and core thought processes have priority. Prefer signed high‑priority Hyperloop channel for mass ingest.
+- Rate limits are adaptive (AIMD) based on resources/load; do not hard‑code 200/60s; prefer server policies that prioritize Soul/Architect roles.
+
+## Tests/CI
+- Tests MUST NOT start or create servers/channels; assume required services are already running.
+- Use only real Telegram users/IDs for base tests; Architect functions under Romano’s context; avoid data leakage.
+- Message deletion is handled only via the mini‑chat app (not Telegram API); remove obsolete Telegram deletion tests.
+
+## PowerShell/Env/Exec (fallback path only)
+- Windows PowerShell specifics: no interactive prompts; no `| cat`; avoid Bash heredocs; set env inline: `$env:VAR="value"`.
+- Uvicorn/Alembic run from `backend`; start with `uvicorn app.main:app`.
+- For SSH: `ssh -i .\Arh\spbd_ed25519 -o StrictHostKeyChecking=accept-new root@<host> 'cmd1; cmd2'`.
+
+- Hyperloop CLI (устойчивый к кавычкам): ОБЯЗАТЕЛЕН `python Soul/scripts/hyperloop_cli.py` (primary)
+  - Примеры:
+    - Префлайт канала: `python .\Soul\scripts\hyperloop_cli.py --preflight`
+    - CLAIM: `python .\Soul\scripts\hyperloop_cli.py --claim-branch --owner 468326902 --branch p48r-dev --topic hyperloop --session dev-001`
+    - CONNECT: `python .\Soul\scripts\hyperloop_cli.py --connect --owner 468326902 --branch p48r-dev`
+    - PING: `python .\Soul\scripts\hyperloop_cli.py --ping --owner 468326902 --session dev-001`
+    - Любой DSL: `python .\Soul\scripts\hyperloop_cli.py --dsl 'INSPECTOR.RUN key=planning.enforce'`
+    - GET с заголовком: `python .\Soul\scripts\hyperloop_cli.py --http-get https://mini.soulpulse.art/api/health`
+
+  - Безопасные админ‑макросы (исключают проблемы с кавычками и `&` в URL):
+    - Ключи настроек (URL‑encoded):
+      - Set KV: `python .\Soul\scripts\hyperloop_cli.py --set-kv --kv-key <key> --kv-value <value>`
+      - Get KV: `python .\Soul\scripts\hyperloop_cli.py --get-kv --kv-key <key>`
+    - Processor diagnostics:
+      - ANALYZE: `python .\Soul\scripts\hyperloop_cli.py --proc-analyze`
+      - Индексы: `python .\Soul\scripts\hyperloop_cli.py --proc-queue-indexes`
+      - EXPLAIN: `python .\Soul\scripts\hyperloop_cli.py --proc-queue-explain --proc-plan-limit 50`
+      - REQUEUE: `python .\Soul\scripts\hyperloop_cli.py --proc-requeue --proc-limit 50000 --proc-older-than-sec 60`
+    - Контролируемый дренаж:
+      - `python .\Soul\scripts\hyperloop_cli.py --proc-once --count 20 --interval-s 1.7`
+
+  - Правило безопасности цитирования (обязательно в системных промптах):
+    - Не формируйте вручную URL с `&` в PowerShell/SSH one‑liners — `&` интерпретируется оболочкой.
+    - Всегда предпочитайте макросы Hyperloop CLI выше — они кодируют параметры URL и проставляют заголовки безопасно.
+    - При вынужденном использовании curl: оборачивайте полный URL в одинарные кавычки на удалённой bash‑стороне и избегайте неэкранированного `&`; тело запроса передавайте файлом (`--data-binary @file`).
+
+  - JSON/RS граф команды (устойчиво к кавычкам):
+    - Для команд с JSON-параметрами используйте режим `--commands` + `--options-json-file` (исключает искажения кавычек в PowerShell):
+
+      ```powershell
+      # 1) Подготовить options в JSON-файл (без PowerShell-конверсий)
+      python -c "import json; open('tmp_options.json','w',encoding='utf-8').write(json.dumps({'spec':{'k':5}}))"
+      # 2) Запустить RS-актора (пример graph.topk) с авто-ретраями backpressure
+      python .\Soul\scripts\hyperloop_cli.py --commands GRAPH.TOPK --options-json-file tmp_options.json --rs-retry 5 --rs-backoff-ms 300
+      ```
+
+    - Для смока RS и метрик используйте:
+
+      ```powershell
+      python .\Soul\scripts\hyperloop_cli.py --dsl "RS.CANARY.RUN"
+      python .\Soul\scripts\hyperloop_cli.py --http-get https://mini.soulpulse.art/api/admin/rs/metrics-raw
+      ```
+
+    - RS Primary/Autotune — быстрые команды (DSL):
+
+      ```powershell
+      # Переключить режим на первичный без фолбэка (после 10–15 мин стабильной канарейки)
+      python .\Soul\scripts\hyperloop_cli.py --dsl "FLAGS.SET key=rs.hyperloop.mode value=rs_primary_no_fallback"
+      
+      # Включить автотюн и задать параметры эскалации
+      python .\Soul\scripts\hyperloop_cli.py --dsl "FLAGS.SET key=rs.autotune.enabled value=true"
+      python .\Soul\scripts\hyperloop_cli.py --dsl "FLAGS.SET key=rs.autotune.max_share value=0.50"
+      python .\Soul\scripts\hyperloop_cli.py --dsl "FLAGS.SET key=rs.autotune.step value=0.05"
+      
+      # Текущая доля канарейки (будет повышаться автотюном при соблюдении SLA)
+      python .\Soul\scripts\hyperloop_cli.py --dsl "FLAGS.SET key=rs.hyperloop.canary_share value=0.30"
+      
+      # Быстрый smoke на graph.topk
+      python .\Soul\scripts\hyperloop_cli.py --dsl "GRAPH.TOPK DRY_RUN"
+      ```
+
+    - RS Auto‑Tune (ядро Processor): ядро периодически читает сырые метрики RS и адаптирует `rs.hyperloop.canary_share` в пределах `[rs.autotune.min_share..max_share]` шагом `rs.autotune.step`. Логика: если `error_rate>rs.autotune.err_rate_max` или `p95>rs.autotune.p95_budget_ms` → уменьшаем; иначе — увеличиваем. При повышении доли включён опциональный LLM‑gate (`rs.autotune.llm_gate.enabled=true`): ядро запрашивает LLM по промпту `rs.autotune.llm_gate.prompt` и применяет инкремент только при `{ "allow": true }`.
+
+    - Снижение нагрузки/устранение backpressure (через admin endpoint set_kv):
+
+      ```powershell
+      $H=@{ 'X-Telegram-User-ID'='468326902' }
+      Invoke-RestMethod -Uri 'https://mini.soulpulse.art/api/admin/soul/settings/set_kv?key=rs.hyperloop.canary_share&value=0.05' -Headers $H -Method Post | ConvertTo-Json -Compress
+      ```
+
+    - Трасса: получить шаги по trace_id (ожидаем `svc.rs.proxy` при удачном RS-вызове):
+
+      ```powershell
+      python .\Soul\scripts\hyperloop_cli.py --dsl "TRACE.STEPS trace_id=<UUID>"
+      ```
+
+### Быстрый старт CLI (без PowerShell‑прелюдий)
+- Все операции выполняйте напрямую через Hyperloop CLI из корня репозитория:
+  - Префлайт: `python .\Soul\scripts\hyperloop_cli.py --preflight`
+  - CLAIM: `python .\Soul\scripts\hyperloop_cli.py --claim-branch --owner 468326902 --branch <branch> --topic <topic> --session <sid>`
+  - RELEASE: `python .\Soul\scripts\hyperloop_cli.py --release-branch --owner 468326902 --branch <branch> --session <sid>`
+  - CONNECT: `python .\Soul\scripts\hyperloop_cli.py --connect --owner 468326902 --branch <branch>`
+  - PING: `python .\Soul\scripts\hyperloop_cli.py --ping --owner 468326902 --session <sid>`
+  - DSL: `python .\Soul\scripts\hyperloop_cli.py --dsl 'INSPECTOR.RUN key=planning.enforce'`
+  - GET: `python .\Soul\scripts\hyperloop_cli.py --http-get https://mini.soulpulse.art/api/health`
+
+- Fallback‑варианты (только при деградации CLI) оставлены ниже в разделе Troubleshooting.
+
+### Environments and PROD Paths (canonical)
+- API base: `https://mini.soulpulse.art/api` (required header `X-Telegram-User-ID: 468326902`).
+- PROD ENV/DB include: `/etc/soulpulse/miniapp_backend.env` (does not override `.env.prod`).
+- systemd service: `soulpulse-backend.service`.
+- Nginx site: `/etc/nginx/sites-enabled/03-mini_soulpulse.conf`.
+- PowerShell prelude (Windows): `$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8`.
+- LLM provider config (service): `/var/www/soulpulse/backend/.env.prod` (keys like `LLM_PROVIDER`, `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_API_URL`, `GIGACHAT_CLIENT_ID`, `GIGACHAT_CLIENT_SECRET`, `GIGACHAT_SCOPE`).
+- Secrets are read only from PROD env; do not log PII.
+ - OAuth NGW (GigaChat): use `base64(client_id:client_secret)` and `scope` from ENV.
+
+### Runtime invariants (execution)
+- Stateless batch: STRICT JSON (top-level array), `desired_action=[]`, all LLM calls with `db=None`, fallback batch→single on errors, `greenlet_spawn=0` for batch.
+- Single/persistent: full persist path `message → quant → links/goals`, strict validation of `desired_action: List[dict]`.
+- Delivery Guard (P27) before any visible reply; signature steps must include core chain.
+- RS bridge (P48R): default profile `prod_safe`; RS sidecar over UDS; Python facade preserves public contracts and signatures.
+
+## P48R/Rust — политика rsbus, canary, fallback, метрики
+- Безопасность и контракты:
+  - Все вызовы к Rust‑акторам идут через `svc.rs.proxy` (rsbus → `HyperloopRSBridge`/`rsbus_client`). Обмен — строго JSON (UTF‑8), детерминированные поля; PII не логируется.
+  - Контракты стабильны: вход/выход описаны в спецификации актора, версионирование схем полей, запрет скрытых параметров.
+  - Fail‑safe: при недоступности rsbus/актора — мгновенный fallback на Python‑ветку, запись инцидента и сохранение P27‑подписи.
+
+- Где обязателен Rust (must‑use):
+  - Тяжёлые граф‑операции над квантами/эмо‑связями (агрегации, кластеризация Louvain/Leiden, top‑K) при порогах: активный граф ≥ 1e6 рёбер, или ≥ 1e5 top‑K/мин, или p95 Python >120 ms 5+ минут подряд.
+  - Потоковые CPU‑участки с жёсткими p95 SLA (TTS/ASR, высоконагруженный ретривер).
+
+- Профили и канареечный запуск:
+  - Флаги: `rs.hyperloop.enabled` (on/off), `rs.hyperloop.mode` (`rs_primary_python_fallback`), `rs.hyperloop.canary_share` (0..1).
+  - Политика: сначала canary (например, 0.1), наблюдение `p95/err_rate/fallback_rate`; градационное наращивание при стабильности.
+
+- Инварианты и метрики:
+  - P27 неизменна: Rust‑актёры добавляют шаги `svc.rs.proxy` и `svc.<actor>.*`, не нарушая цепочку Guard.
+  - Обязательные метрики: `rs_actor.p95_ms`, `rs_actor.error_rate`, `rs_actor.throughput_rps`, `fallback_rate` (сбор через rsbus Prometheus).
+  - Rollback: при p95>50 ms или err_rate>1% — авто‑снижение `canary_share`→0 и возврат на Python.
+
+ - SLA пороги (RS graph.*):
+   - Цель p95: ≤ 50 ms (окно 5m) для `graph.topk` и `graph.cluster`.
+   - error_rate: ≤ 1.0% (окно 5m).
+   - fallback_rate/backpressure: 0 устойчиво; любые попадания → расследование (P50) и снижение `canary_share`.
+   - Эскалация canary: 0.05 → 0.10 → 0.20 при стабильных метриках ≥ 10 минут на каждом шаге; авто‑откат при нарушении SLA.
+
+- Контракты rsbus (spec):
+  - `graph.aggregate`: вход — фильтры/маски/веса; выход — `summary.json`.
+  - `graph.cluster`: вход — параметры (Louvain/Leiden); выход — `clusters.json` (id, cohesion, members).
+  - `graph.topk`: вход — аффинити/эмо‑маска; выход — `affinity_topk.json` (id→score).
+
+### Quick checks (after deploy) — PowerShell
+```powershell
+$H=@{ 'X-Telegram-User-ID'='468326902' }
+curl.exe -s -S -H "X-Telegram-User-ID: 468326902" https://mini.soulpulse.art/api/health
+curl.exe -s -S -H "X-Telegram-User-ID: 468326902" https://mini.soulpulse.art/api/admin/soul/db/check
+Invoke-RestMethod -Uri 'https://mini.soulpulse.art/api/admin/soul/llm/test?provider=deepseek&prompt=ping' -Headers $H -Method Get | ConvertTo-Json -Compress
+Invoke-RestMethod -Uri 'https://mini.soulpulse.art/api/admin/dispatcher/run_for?minutes=1' -Headers $H -Method Post | ConvertTo-Json -Compress
+Start-Sleep -Seconds 2
+Invoke-RestMethod -Uri 'https://mini.soulpulse.art/api/admin/dispatcher/metrics' -Headers $H -Method Get | ConvertTo-Json -Compress
+Invoke-RestMethod -Uri 'https://mini.soulpulse.art/api/admin/dispatcher/stop' -Headers $H -Method Post | ConvertTo-Json -Compress
+```
+
+### Hyperloop DSL — common errors (tips)
+- "Field required: body.commands" — send `commands` as a single string.
+- `string_type for body.commands` — `commands` must be a string, not object/array.
+- No steps in inspector — generate traffic: `/soul/process` and `CORE.PIPELINE.RUN ... WITH TRACE`, verify commits.
+
+### Troubleshooting (HTTP 502/504, timeouts, quoting)
+- 502/504 from gateway:
+  - Verify API health/DB: use `Soul/scripts/admin_quick_checks.ps1`.
+  - Check service and logs via SSH:
+    - `ssh -i .\Arh\spbd_ed25519 -o StrictHostKeyChecking=accept-new root@217.12.38.238 'systemctl status soulpulse-backend.service; journalctl -u soulpulse-backend.service -n 100 --no-pager'`
+  - Nginx test/reload:
+    - `ssh -i .\Arh\spbd_ed25519 -o StrictHostKeyChecking=accept-new root@217.12.38.238 'nginx -t; systemctl reload nginx'`
+  - Reduce workload: lower `num_quants` to 1–3 for smoke calls; re-run Hyperloop smoke.
+- PowerShell quoting pitfalls:
+  - Always build `$B = @{ commands = '<ONE LINE DSL>' } | ConvertTo-Json -Compress`.
+  - For complex quotes, write JSON body to file and use `curl.exe --data-binary`:
+    - `'{ "commands": "CORE.PIPELINE.RUN input_text=\"health check\" WITH TRACE" }' | Set-Content -Path tmp_body.json -Encoding UTF8 -NoNewline`
+    - `curl.exe -s -S -H "X-Telegram-User-ID: 468326902" -H "Content-Type: application/json" --data-binary "@tmp_body.json" https://mini.soulpulse.art/api/hyperloop/execute`
+  - Error `string_type for body.commands` → ensure `$B` is JSON string, not object; reapply `ConvertTo-Json -Compress`.
+  - Do NOT inline JSON with `-d '{ ... }'` in PowerShell — use file + `--data-binary` to avoid header/body tokenization bugs (symptom: `Could not resolve host: application`).
+  - For local calls to `http://127.0.0.1` use `--noproxy 127.0.0.1,localhost` with curl to bypass OS/corporate proxies.
+  - Hyperloop REST v1 expects `{ "commands": "..." }` only; prefer `hyperloop_cli.py` for base64 DSL; avoid sending `commands_b64` via curl/Invoke-RestMethod.
+
+### Hyperloop API — корректные примеры запросов (Windows)
+- Primary: Hyperloop CLI (см. выше)
+- Invoke-RestMethod (fallback 1):
+  - CLAIM:
+    - `powershell -NoProfile -Command "$H=@{ 'X-Telegram-User-ID'='468326902' }; $B=@{ commands='INSPECTOR.RUN key=plan.branch action=claim_branch owner=\"468326902\" branch=\"p48r-dev\" topic=\"hyperloop\" session=\"dev-001\"' } | ConvertTo-Json -Compress; Invoke-RestMethod -Uri 'https://mini.soulpulse.art/api/hyperloop/execute' -Headers $H -Method Post -ContentType 'application/json' -Body $B"`
+  - RELEASE:
+    - `powershell -NoProfile -Command "$H=@{ 'X-Telegram-User-ID'='468326902' }; $B=@{ commands='INSPECTOR.RUN key=plan.branch action=release_branch owner=\"468326902\" branch=\"p48r-dev\" session=\"dev-001\"' } | ConvertTo-Json -Compress; Invoke-RestMethod -Uri 'https://mini.soulpulse.art/api/hyperloop/execute' -Headers $H -Method Post -ContentType 'application/json' -Body $B"`
+  - PING:
+    - `powershell -NoProfile -Command "$H=@{ 'X-Telegram-User-ID'='468326902' }; $B=@{ commands='SESSION.PING owner=\"468326902\" session=\"dev-001\"' } | ConvertTo-Json -Compress; Invoke-RestMethod -Uri 'https://mini.soulpulse.art/api/hyperloop/execute' -Headers $H -Method Post -ContentType 'application/json' -Body $B"`
+  - DEV.CONNECT:
+    - `powershell -NoProfile -Command "$H=@{ 'X-Telegram-User-ID'='468326902' }; $B=@{ commands='DEV.CONNECT owner=\"468326902\" branch=\"p48r-dev\"' } | ConvertTo-Json -Compress; Invoke-RestMethod -Uri 'https://mini.soulpulse.art/api/hyperloop/execute' -Headers $H -Method Post -ContentType 'application/json' -Body $B"`
+  - Смок:
+    - `powershell -NoProfile -Command "$H=@{ 'X-Telegram-User-ID'='468326902' }; $B=@{ commands='CORE.PIPELINE.RUN input_text=\"health check\" WITH TRACE' } | ConvertTo-Json -Compress; Invoke-RestMethod -Uri 'https://mini.soulpulse.art/api/hyperloop/execute' -Headers $H -Method Post -ContentType 'application/json' -Body $B"`
+
+- curl.exe через файл (fallback 2, устойчив к кавычкам):
+  - CLAIM:
+    - `powershell -NoProfile -Command "'{ \"commands\": \"INSPECTOR.RUN key=plan.branch action=claim_branch owner=\\\"468326902\\\" branch=\\\"p48r-dev\\\" topic=\\\"hyperloop\\\" session=\\\"dev-001\\\"\" }' | Set-Content -Path tmp_body.json -Encoding UTF8 -NoNewline; curl.exe -s -S -H \"X-Telegram-User-ID: 468326902\" -H \"Content-Type: application/json\" --data-binary \"@tmp_body.json\" https://mini.soulpulse.art/api/hyperloop/execute"`
+  - RELEASE:
+    - `powershell -NoProfile -Command "'{ \"commands\": \"INSPECTOR.RUN key=plan.branch action=release_branch owner=\\\"468326902\\\" branch=\\\"p48r-dev\\\" session=\\\"dev-001\\\"\" }' | Set-Content -Path tmp_body.json -Encoding UTF8 -NoNewline; curl.exe -s -S -H \"X-Telegram-User-ID: 468326902\" -H \"Content-Type: application/json\" --data-binary \"@tmp_body.json\" https://mini.soulpulse.art/api/hyperloop/execute"`
+  - PING:
+    - `powershell -NoProfile -Command "'{ \"commands\": \"SESSION.PING owner=\\\"468326902\\\" session=\\\"dev-001\\\"\" }' | Set-Content -Path tmp_body.json -Encoding UTF8 -NoNewline; curl.exe -s -S -H \"X-Telegram-User-ID: 468326902\" -H \"Content-Type: application/json\" --data-binary \"@tmp_body.json\" https://mini.soulpulse.art/api/hyperloop/execute"`
+  - DEV.CONNECT:
+    - `powershell -NoProfile -Command "'{ \"commands\": \"DEV.CONNECT owner=\\\"468326902\\\" branch=\\\"p48r-dev\\\"\" }' | Set-Content -Path tmp_body.json -Encoding UTF8 -NoNewline; curl.exe -s -S -H \"X-Telegram-User-ID: 468326902\" -H \"Content-Type: application/json\" --data-binary \"@tmp_body.json\" https://mini.soulpulse.art/api/hyperloop/execute"`
+  - Local backend calls: append `--noproxy 127.0.0.1,localhost` when using `http://127.0.0.1:8000/...`.
+  - Смок:
+    - `powershell -NoProfile -Command "'{ \"commands\": \"CORE.PIPELINE.RUN input_text=\\\"health check\\\" WITH TRACE\" }' | Set-Content -Path tmp_body.json -Encoding UTF8 -NoNewline; curl.exe -s -S -H \"X-Telegram-User-ID: 468326902\" -H \"Content-Type: application/json\" --data-binary \"@tmp_body.json\" https://mini.soulpulse.art/api/hyperloop/execute"`
+
+Notes:
+- Поле body строго: `{ "commands": "<одна строка DSL>" }`.
+- Внутренние кавычки в DSL экранируются: `\"` в PowerShell строках.
+- Не используйте массив/объект вместо строки в `commands`.
+ - Не используйте `curl -d '{...}'` в PowerShell — сохраняйте JSON в файл и отправляйте `--data-binary`.
+ - Для локальных запросов к `http://127.0.0.1` используйте `--noproxy 127.0.0.1,localhost`.
+
+## Coding style & Safety
+- Prefer clear, verbose, self‑documenting code; no deep nesting; guard clauses first.
+- Strict typing for exported/public APIs; no `any` where avoidable.
+- Comments explain “why”, not “how”; avoid TODOs — implement instead.
+
+## When generating/ingesting knowledge at scale
+- Use topic shards and orchestrators; pre‑load prompt profiles for emotion/temperature calibration (Mode D+).
+- Attach professional skills and plan/goal structures; ensure high‑quality `quant_links` topology and loops for production cases.
+
+---
+
+# Scoped rules
+
+[backend/**]
+- Enforce P27 signature chains and incident logging in all services.
+- Integrate inspectors (`neuro_integrity`, `planning.enforce`) into Processor cycles or monitoring.
+- Keep Hyperloop DSL commands deterministic; support WITH TRACE/DRY_RUN/TIMEOUT.
+- DEV.CONNECT observability: export `dev_connect_latency_ms_p50|p95`, counters `dev_connect_total{status}` and `dev_connect_error_total{type}`; Prometheus rules in `/etc/prometheus/rules/rules_dev_connect.yml` (source: `ops/prometheus/rules_dev_connect.yml`). Dashboards must include 401/404/422/timeout panels.
+ - AGE Sync policy (canonical):
+   - Single active worker across APP servers; if APP2 runs age-sync, APP1 must be inactive.
+   - Postgres must have `shared_preload_libraries` including `age` and `search_path = ag_catalog, "$user", public`.
+   - Cypher calls must use `ag_catalog.cypher(graph, $$...$$, CAST(:params AS agtype))`; parameters only via JSON agtype; no string interpolation.
+   - Timestamps in cypher are passed via `$now` parameter (RFC3339) — do not use `datetime()` in cypher.
+   - Relation type must come from `COALESCE(connection_type::text,'semantic')`.
+   - Concurrency and pacing flags are controlled via DB: `age.sync.concurrency`, `age.sync.pages_per_tick`, `age.sync.tick_time_budget_ms`, `age.sync.loop_sleep_ms`.
+   - On contention (`another operation is in progress`) reduce concurrency to 1 and, if lag persists, reduce `pages_per_tick`.
+
+[Soul/scripts/**]
+- For ingest/generation scripts: support `--threads`, adaptive rate limiting, signed API mode; validate UUIDs and JSONL lines strictly.
+
+[frontend/**]
+- Do not regress calendars/reminders UX; honor `user_tz` for UI while storing UTC.
+
+# How to edit
+- This `.cursorrules` file lives at the repo root. Edit directly in Cursor; changes apply to all LLM agents immediately upon save.
+- Keep this file self‑contained; update when P‑series specs change (P16/P25/P27/P30/P36/P38/P40/P41/P44/P45/P46/P47).
+
+## Projects/Incidents — быстрые команды и практики
+- Всегда используйте PROD API `https://mini.soulpulse.art/api` с заголовком `X-Telegram-User-ID: 468326902`.
+- First‑Try Success: Primary Hyperloop CLI → Fallback `Invoke-RestMethod` → Fallback файл+`curl.exe`; не более 2 попыток суммарно. Ошибки логируйте инцидентами по таксономии `quotes_error|header_missing|url_malformed|timeout|auth_forbidden|other`.
+- Минимальный набор для проектов (P40): `PROJECT.LIST`, `PROJECT.CREATE ...`, `PLAN.TASK.ADD ...`, `PLAN.CPM.CALC ... WITH TRACE`.
+- Инциденты (P50): генерируйте негативные кейсы для диагностики канала (`auth_forbidden|url_malformed|timeout`) и снимайте snapshot `GET /api/admin/incidents`.
+- Обязательные ссылки в документах: `docs/SYSTEM_MASTER_DOCUMENTS_REGISTRY.md` и `docs/PROJECT_STRUCTURE.md`.
+
+## Addendum (P57–P60)
+- P57: Управление системным промптом/правилами разработки — см. `Soul/P57_TZ_Soul_Development_Rules_and_System_Prompt_Governance_v1_0.md`; изменения `.cursorrules` должны устранять дубли/противоречия и синхронизироваться с реестрами.
+- P58: Hyperloop Projects & Planning API — использовать детерминированные DSL команды (`PROJECT.LIST|GET`, `PLAN.TASK.ADD|DEPEND`, `PLAN.CPM.CALC WITH TRACE`).
+- P59: Паритет документации и восстановление — при сбоях восстанавливать документы из PROD/архивов с обязательным обновлением `SYSTEM_MASTER_DOCUMENTS_REGISTRY_v*` и `PROJECT_STRUCTURE_v*`.
+- P60: Политики миграций — миграции строго через Alembic; backfill идемпотентный; мониторинг p95/ошибок, фиксация инцидентов.
+
+## DEV.CONNECT Observability (дополнение)
+- Обязательные метрики: `dev_connect_latency_ms_p50|p95`, `dev_connect_total{status}`, `dev_connect_error_total{type}`.
+- Правила Prometheus: `/etc/prometheus/rules/rules_dev_connect.yml`, группа `dev_connect_rules` (401/404/422/timeout).
+- Grafana: дашборд из `ops/grafana/dev_connect_dashboard.json` (провижининг включён).
+- Alertmanager: маршрут Telegram обязателен для `dev_connect_rules` (упрощённый `route.receiver=telegram` допускается). 
+
+## Cursor Worktrees (автоподготовка окружения)
+- Все новые worktree должны автоматически запускать PowerShell‑скрипт `./.cursor/setup.ps1` через `.cursor/worktrees.json`:
+  - Формат файла:
+    - `{ "onCreate": { "shell": "powershell", "script": "powershell -NoProfile -ExecutionPolicy Bypass -File ./.cursor/setup.ps1" } }`
+- Скрипт обязан:
+  - Создать/активировать `.venv`, установить `backend/requirements.txt`, а также `ruff` и `mypy`.
+  - Установить git hook через `scripts/setup_precommit_hook.ps1` (аудит фронта и gate dist).
+  - Установить фронтенд‑зависимости (`npm ci` при наличии `package-lock.json`, иначе `npm install`).
+  - Выполнить Hyperloop префлайт и read‑only инспекторы: `INSPECTOR.RUN key=planning.enforce`, `INSPECTOR.RUN key=guard.canonical.urls`.
+  - Не запускать долгоживущие процессы и не писать секреты/URL вне БД.
+- Автоклейм ветки разрешён только при наличии переменных окружения: `SOUL_TG_ID`, `SOUL_BRANCH`, `SOUL_SESSION`. Иначе — пропуск.
+- Любые изменения скрипта должны сохранять совместимость с Windows PowerShell и соблюдать правила P27/P40.
+ - Политика видимости (важно): worktrees не должны скрывать каталоги или файлы от агентов. Запрещены любые поля/механизмы, ограничивающие обзор (например, `visiblePaths`, `hiddenPaths`, пользовательские фильтры каталогов, произвольные ignore‑маски в конфиге worktrees). Весь репозиторий обязан быть видимым целиком, включая `backend`, `frontend`, `Soul`, `scripts`, `docs`, `ops`, а также временные каталоги, если на них есть ссылки в задачах.
+ - Не использовать `.cursorignore` для скрытия рабочих директорий. Исключения допускаются только для тяжёлых артефактов (архивы/бандлы) и должны быть оформлены как документационные примеры под whitelisted путями; при этом не ограничивать доступ агентов к исходникам.
+ - Не применять редакторские фильтры вида `files.exclude`/`search.exclude` для скрытия исходников; допустимо лишь ускорять поиск, не скрывая элементы дерева.
+ - Цель worktrees — ускорение старта окружения и стабильность, а не контроль видимости. Любое обнаруженное скрытие рабочих путей считается регрессией и подлежит немедленной правке.
