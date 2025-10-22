@@ -1,5 +1,21 @@
 # SYSTEM MASTER DOCUMENTS REGISTRY
 
+Last update: 2025-10-22 (P66 Context Management added; .cursorrules optimized -54.9%; operational/extended logs templates)
+
+## P66 — Context Management and Operational Logs (NEW)
+
+- **ТЗ:** `Soul/P66_TZ_Project_Context_Management_and_Operational_Logs_v1_0.md`
+- **Назначение:** 4-уровневая система управления контекстом агентов (базовый промпт → operational log → extended log → P-TZ → sources)
+- **Проблема решена:** Переполнение контекста Cursor Agent при длинных сессиях (50+ сообщений)
+- **Результат:** Начальный контекст снижен с ~50K до ~4K токенов (-92%)
+- **Шаблоны:** `Soul/templates/project_operational_template.md`, `Soul/templates/project_extended_template.md`
+- **DSL команды:** `PROJECT.LOG.INIT`, `PROJECT.LOG.UPDATE_OP`, `PROJECT.LOG.UPDATE_EXT`, `PROJECT.LOG.ROTATE`, `PROJECT.LOG.READ_OP`, `PROJECT.LOG.READ_EXT`
+- **Интеграция:** P40 (auto-init при PROJECT.CREATE), P57 (System Prompt Governance)
+- **Метрики:**
+  - Operational log: 50-150 строк (~1-2K токенов), auto-trim to 5 latest steps
+  - Extended log: 300-1000 строк (~5-15K токенов)
+  - `.cursorrules`: 483→271 строк, 5029→2266 токенов (-54.9%)
+
 Last update: 2025-10-19 (Hyperloop 502 postmortem added; systemd/nginx/RS policies synced; GitHub Admin CLI consolidated)
 
 - P63 Recovery — Final Report: `docs/P63_RECOVERY_FINAL_REPORT_2025-10-19.md`

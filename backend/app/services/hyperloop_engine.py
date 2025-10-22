@@ -5980,6 +5980,32 @@ class HyperloopEngine:
                         await db.rollback()
                     except Exception:
                         pass
+                # P66: Auto-init project logs (best-effort)
+                try:
+                    project_key = re.sub(r'[^\w\-]', '_', name.lower())[:50] or pid[:8]
+                    from ..services.project_log_service import ProjectLogService
+                    log_svc = ProjectLogService()
+                    metadata_log = {
+                        "owner": owner,
+                        "methodology": methodology,
+                        "status": "active",
+                        "description": str(params.get("description") or "")
+                    }
+                    result_log = await log_svc.init_logs(pid, name, project_key, "default", metadata_log)
+                    if result_log.get("ok"):
+                        try:
+                            await db.execute(sa_text(
+                                "update projects set log_operational_path=:op, log_extended_path=:ex, updated_at=now() where id=cast(:id as uuid)"
+                            ), {"op": result_log["paths"]["operational"], "ex": result_log["paths"]["extended"], "id": pid})
+                            await db.commit()
+                        except Exception:
+                            try:
+                                await db.rollback()
+                            except Exception:
+                                pass
+                except Exception:
+                    # Logs init — best-effort, do not block PROJECT.CREATE
+                    pass
                 out = {"ok": True, "data": {"project_id": pid}}
                 # Auto-select methodology from Lessons Learned repository (best-effort)
                 try:
@@ -6156,6 +6182,185 @@ class HyperloopEngine:
                 except Exception:
                     pass
 
+            # ---------------------- PROJECT LOG (P66) ----------------------
+            elif handler in ("project.log.init", "PROJECT.LOG.INIT"):
+                # PROJECT.LOG.INIT project_id=<uuid> [template=default]
+                pid = str(params.get("project_id") or "").strip()
+                if not pid:
+                    return {"ok": False, "error": "project_id required"}
+                template = str(params.get("template") or "default").strip()
+                try:
+                    # Получить данные проекта
+                    row = (await db.execute(sa_text(
+                        "select name, description, methodology, owner, status from projects where id=cast(:id as uuid)"
+                    ), {"id": pid})).mappings().first()
+                    if not row:
+                        return {"ok": False, "error": "project not found"}
+                    # Создать project_key из имени
+                    project_name = str(row.get("name") or "")
+                    import re
+                    project_key = re.sub(r'[^\w\-]', '_', project_name.lower())[:50] or pid[:8]
+                    # Инициализировать логи
+                    from ..services.project_log_service import ProjectLogService
+                    log_svc = ProjectLogService()
+                    metadata = {
+                        "owner": row.get("owner"),
+                        "methodology": row.get("methodology"),
+                        "status": row.get("status"),
+                        "description": row.get("description")
+                    }
+                    result = await log_svc.init_logs(pid, project_name, project_key, template, metadata)
+                    if not result.get("ok"):
+                        return result
+                    # Обновить paths в проекте
+                    await db.execute(sa_text(
+                        "update projects set log_operational_path=:op, log_extended_path=:ex, updated_at=now() where id=cast(:id as uuid)"
+                    ), {"op": result["paths"]["operational"], "ex": result["paths"]["extended"], "id": pid})
+                    await db.commit()
+                except Exception as e:
+                    return {"ok": False, "error": f"project.log.init error: {e}"}
+                signature_ctx.append_step(function_id="cmd.hyperloop.project.log.init", scope="hyperloop", version="v1")
+                out = {"ok": True, "data": result.get("paths", {})}
+            
+            elif handler in ("project.log.read_op", "PROJECT.LOG.READ_OP"):
+                # PROJECT.LOG.READ_OP project_id=<uuid>
+                pid = str(params.get("project_id") or "").strip()
+                if not pid:
+                    return {"ok": False, "error": "project_id required"}
+                try:
+                    # Получить project_key
+                    row = (await db.execute(sa_text(
+                        "select name from projects where id=cast(:id as uuid)"
+                    ), {"id": pid})).first()
+                    if not row:
+                        return {"ok": False, "error": "project not found"}
+                    import re
+                    project_key = re.sub(r'[^\w\-]', '_', str(row[0] or "").lower())[:50] or pid[:8]
+                    # Прочитать operational
+                    from ..services.project_log_service import ProjectLogService
+                    log_svc = ProjectLogService()
+                    result = await log_svc.read_operational(project_key)
+                    if not result.get("ok"):
+                        return result
+                except Exception as e:
+                    return {"ok": False, "error": f"project.log.read_op error: {e}"}
+                signature_ctx.append_step(function_id="cmd.hyperloop.project.log.read_op", scope="hyperloop", version="v1")
+                out = {"ok": True, "data": result}
+            
+            elif handler in ("project.log.read_ext", "PROJECT.LOG.READ_EXT"):
+                # PROJECT.LOG.READ_EXT project_id=<uuid> [section=all|history|adr]
+                pid = str(params.get("project_id") or "").strip()
+                if not pid:
+                    return {"ok": False, "error": "project_id required"}
+                section = params.get("section", "all")
+                try:
+                    # Получить project_key
+                    row = (await db.execute(sa_text(
+                        "select name from projects where id=cast(:id as uuid)"
+                    ), {"id": pid})).first()
+                    if not row:
+                        return {"ok": False, "error": "project not found"}
+                    import re
+                    project_key = re.sub(r'[^\w\-]', '_', str(row[0] or "").lower())[:50] or pid[:8]
+                    # Прочитать extended
+                    from ..services.project_log_service import ProjectLogService
+                    log_svc = ProjectLogService()
+                    result = await log_svc.read_extended(project_key, section)
+                    if not result.get("ok"):
+                        return result
+                except Exception as e:
+                    return {"ok": False, "error": f"project.log.read_ext error: {e}"}
+                signature_ctx.append_step(function_id="cmd.hyperloop.project.log.read_ext", scope="hyperloop", version="v1")
+                out = {"ok": True, "data": result}
+            
+            elif handler in ("project.log.update_op", "PROJECT.LOG.UPDATE_OP"):
+                # PROJECT.LOG.UPDATE_OP project_id=<uuid> step_title="..." step_result="..." [files="..."]
+                pid = str(params.get("project_id") or "").strip()
+                step_title = str(params.get("step_title") or "").strip()
+                step_result = str(params.get("step_result") or "").strip()
+                if not pid or not step_title or not step_result:
+                    return {"ok": False, "error": "project_id, step_title, step_result required"}
+                try:
+                    # Получить project_key
+                    row = (await db.execute(sa_text(
+                        "select name from projects where id=cast(:id as uuid)"
+                    ), {"id": pid})).first()
+                    if not row:
+                        return {"ok": False, "error": "project not found"}
+                    import re
+                    project_key = re.sub(r'[^\w\-]', '_', str(row[0] or "").lower())[:50] or pid[:8]
+                    # Парсинг files
+                    files_param = params.get("files", "")
+                    files = [f.strip() for f in str(files_param).split(",") if f.strip()] if files_param else None
+                    # Обновить operational
+                    from ..services.project_log_service import ProjectLogService
+                    log_svc = ProjectLogService()
+                    result = await log_svc.update_operational(project_key, step_title, step_result, files)
+                    if not result.get("ok"):
+                        return result
+                except Exception as e:
+                    return {"ok": False, "error": f"project.log.update_op error: {e}"}
+                signature_ctx.append_step(function_id="cmd.hyperloop.project.log.update_op", scope="hyperloop", version="v1")
+                out = {"ok": True, "data": result}
+            
+            elif handler in ("project.log.update_ext", "PROJECT.LOG.UPDATE_EXT"):
+                # PROJECT.LOG.UPDATE_EXT project_id=<uuid> section=<history|adr|diagrams> content="..."
+                pid = str(params.get("project_id") or "").strip()
+                section = str(params.get("section") or "").strip()
+                content = str(params.get("content") or "").strip()
+                if not pid or not section or not content:
+                    return {"ok": False, "error": "project_id, section, content required"}
+                try:
+                    # Получить project_key
+                    row = (await db.execute(sa_text(
+                        "select name from projects where id=cast(:id as uuid)"
+                    ), {"id": pid})).first()
+                    if not row:
+                        return {"ok": False, "error": "project not found"}
+                    import re
+                    project_key = re.sub(r'[^\w\-]', '_', str(row[0] or "").lower())[:50] or pid[:8]
+                    # Обновить extended
+                    from ..services.project_log_service import ProjectLogService
+                    log_svc = ProjectLogService()
+                    result = await log_svc.update_extended(project_key, section, content)
+                    if not result.get("ok"):
+                        return result
+                except Exception as e:
+                    return {"ok": False, "error": f"project.log.update_ext error: {e}"}
+                signature_ctx.append_step(function_id="cmd.hyperloop.project.log.update_ext", scope="hyperloop", version="v1")
+                out = {"ok": True}
+            
+            elif handler in ("project.log.rotate", "PROJECT.LOG.ROTATE"):
+                # PROJECT.LOG.ROTATE project_id=<uuid> [next_task="..."]
+                pid = str(params.get("project_id") or "").strip()
+                if not pid:
+                    return {"ok": False, "error": "project_id required"}
+                next_task = params.get("next_task")
+                try:
+                    # Получить project_key
+                    row = (await db.execute(sa_text(
+                        "select name from projects where id=cast(:id as uuid)"
+                    ), {"id": pid})).first()
+                    if not row:
+                        return {"ok": False, "error": "project not found"}
+                    import re
+                    project_key = re.sub(r'[^\w\-]', '_', str(row[0] or "").lower())[:50] or pid[:8]
+                    # Ротация
+                    from ..services.project_log_service import ProjectLogService
+                    log_svc = ProjectLogService()
+                    result = await log_svc.rotate_logs(project_key, next_task)
+                    if not result.get("ok"):
+                        return result
+                    # Обновить timestamp последней ротации
+                    await db.execute(sa_text(
+                        "update projects set log_last_rotated_at=now(), updated_at=now() where id=cast(:id as uuid)"
+                    ), {"id": pid})
+                    await db.commit()
+                except Exception as e:
+                    return {"ok": False, "error": f"project.log.rotate error: {e}"}
+                signature_ctx.append_step(function_id="cmd.hyperloop.project.log.rotate", scope="hyperloop", version="v1")
+                out = {"ok": True, "data": result}
+            
             # ---------------------- PROJECT LOG (P40) ----------------------
             elif handler in ("project.log.set", "PROJECT.LOG.SET"):
                 # PROJECT.LOG.SET id=<uuid> path="<rel_path>"

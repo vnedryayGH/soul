@@ -45,7 +45,7 @@ from .routers import prompts_integration
 from .routers import profile, themes, reminders
 # P22 фасады импортируем лениво внутри флага ENABLE_P22_FACADES
 from .routers.reminders_facade import router as reminders_facade_router  # type: ignore
-from .routers import llm_management, message_management
+from .routers import llm_management, message_management, llm_service_smoke, llm_admin_aux
 from .routers import rbac_admin
 from .services.background_monitor import start_background_monitors  # type: ignore
 try:
@@ -82,6 +82,11 @@ except Exception as _pc_admin_err:
 from .routers import keywords as keywords_router
 from .routers import keywords_alt as keywords_alt_router
 from .routers import keywords_admin as keywords_admin_router
+try:
+    from .routers import project_logs_admin as project_logs_admin_router  # type: ignore
+except Exception as _plogs_err:
+    project_logs_admin_router = None  # type: ignore
+    logging.getLogger(__name__).warning(f"project_logs_admin router disabled: {_plogs_err}")
 from .routers import cache_management
 from .routers import account_management
 from .routers import user_profile_update
@@ -573,7 +578,7 @@ async def add_security_headers(request: Request, call_next):
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://telegram.org",
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
             "img-src 'self' data: https:",
-            "connect-src 'self' wss: https://cdn.jsdelivr.net https://api.deepseek.com https://gigachat.devices.sberbank.ru https://ngw.devices.sberbank.ru https://mini.soulpulse.art",
+            "connect-src 'self' wss: https://cdn.jsdelivr.net https://api.deepseek.com https://mini.soulpulse.art",
             "font-src 'self' https://fonts.gstatic.com",
             "object-src 'none'",
             "media-src 'self'",
@@ -586,7 +591,7 @@ async def add_security_headers(request: Request, call_next):
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://telegram.org",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: https:",
-            "connect-src 'self' wss: https://api.deepseek.com https://gigachat.devices.sberbank.ru https://ngw.devices.sberbank.ru https://mini.soulpulse.art",
+            "connect-src 'self' wss: https://api.deepseek.com https://mini.soulpulse.art",
             "font-src 'self'",
             "object-src 'none'",
             "media-src 'self'",
@@ -744,10 +749,17 @@ if _P22_ENABLED:
     except Exception as _p22_gantt_err:
         logging.getLogger(__name__).warning(f"gantt_facade disabled: {_p22_gantt_err}")
 app.include_router(llm_management.router)
+app.include_router(llm_service_smoke.router)
+app.include_router(llm_admin_aux.router)
 app.include_router(message_management.router)
 app.include_router(keywords_router.router)
 app.include_router(keywords_alt_router.router)
 app.include_router(keywords_admin_router.router)
+if project_logs_admin_router is not None:
+    try:
+        app.include_router(project_logs_admin_router.router)
+    except Exception as _plogs_inc_err:
+        logging.getLogger(__name__).warning(f"project_logs_admin include failed: {_plogs_inc_err}")
 app.include_router(cache_management.router)
 app.include_router(account_management.router)
 app.include_router(user_profile_update.router)
@@ -841,6 +853,11 @@ app.include_router(security_red_team_router.router)
 app.include_router(dispatcher_admin.router)
 app.include_router(energy_admin.router)
 app.include_router(processor_dashboard.router)
+try:
+    # Публикуем диагностические алиасы процессора во внешний контур
+    app.include_router(processor_dashboard.alias_router)
+except Exception as _p_diag_err:
+    logging.getLogger(__name__).warning(f"processor_dashboard alias include failed: {_p_diag_err}")
 if _harvest_admin is not None:
     try:
         app.include_router(_harvest_admin.router)
@@ -939,6 +956,16 @@ except Exception as _arch_err:
 from .routers import hyperloop_admin as _hyperloop_admin
 app.include_router(_hyperloop_admin.router)
 try:
+    from .routers import secrets_admin as _secrets_admin
+    app.include_router(_secrets_admin.router)
+except Exception as _sec_err:
+    logging.getLogger(__name__).warning(f"secrets_admin disabled: {_sec_err}")
+try:
+    from .routers import agent_exec as _agent_exec
+    app.include_router(_agent_exec.router)
+except Exception as _agent_exec_err:
+    logging.getLogger(__name__).warning(f"agent_exec router disabled: {_agent_exec_err}")
+try:
     from .routers import agent_comm as _agent_comm
     app.include_router(_agent_comm.router)
     # Дублируем маршруты без префикса для ws-пути /ws/* (совместимость с Nginx location /ws/)
@@ -981,6 +1008,14 @@ try:
     app.include_router(_processor_admin.router)
 except Exception as _p30_err:
     logging.getLogger(__name__).warning(f"processor_admin disabled: {_p30_err}")
+# GitHub Proxy and Webhook
+try:
+    from .routers import github_proxy as _github_proxy
+    app.include_router(_github_proxy.router)
+    app.include_router(_github_proxy.router_ro)
+    app.include_router(_github_proxy.webhook_router)
+except Exception as _gh_err:
+    logging.getLogger(__name__).warning(f"github_proxy disabled: {_gh_err}")
 app.include_router(admin_settings_router.router)
 if resilience_admin_router is not None:
     try:
@@ -1064,6 +1099,10 @@ from .routers import soul_admin as _soul_admin_router
 app.include_router(_soul_admin_router.router)
 from .routers import soul_graph_admin as _soul_graph_admin_router
 app.include_router(_soul_graph_admin_router.router)
+from .routers import llm_service_smoke as _llm_smoke_router
+app.include_router(_llm_smoke_router.router)
+from .routers import trainer_admin as _trainer_admin_router
+app.include_router(_trainer_admin_router.router)
 try:
     from .routers import voice_admin as _voice_admin_router
     app.include_router(_voice_admin_router.router)
@@ -1078,31 +1117,52 @@ async def aux_llm_health():
         _t0 = time.time()
         base_url: Optional[str] = None
         timeout_ms: int = 1500
+        # Приоритет ENV override на узле (изоляция APP1)
         try:
-            from .services.soul_settings_service import SoulSettingsService as _SS
-            async with get_db_session() as db:  # type: ignore
-                svc = _SS()
-                bu = await svc.get_setting("llm.aux.url", db)
-                to = await svc.get_setting("lima.timeout_ms", db)
-                if isinstance(bu, str) and bu:
-                    base_url = bu
-                if not base_url:
-                    # fallback: lima.base_url
-                    try:
-                        bu2 = await svc.get_setting("lima.base_url", db)
-                        if isinstance(bu2, str) and bu2:
-                            base_url = bu2
-                    except Exception:
-                        pass
-                try:
-                    timeout_ms = int(to) if to is not None else timeout_ms
-                except Exception:
-                    timeout_ms = timeout_ms
+            from .config import get_settings as _gs  # type: ignore
+            _cfg = _gs()
+            env_aux = getattr(_cfg, "llm_aux_api_url", None)
+            if isinstance(env_aux, str) and env_aux.strip():
+                base_url = env_aux.strip()
         except Exception:
             pass
+        # Если ENV не задан — читаем из БД (llm.aux.url → lima.base_url)
+        if not base_url:
+            try:
+                from .services.soul_settings_service import SoulSettingsService as _SS
+                async with get_db_session() as db:  # type: ignore
+                    svc = _SS()
+                    bu = await svc.get_setting("llm.aux.url", db)
+                    to = await svc.get_setting("lima.timeout_ms", db)
+                    if isinstance(bu, str) and bu:
+                        base_url = bu
+                    if not base_url:
+                        try:
+                            bu2 = await svc.get_setting("lima.base_url", db)
+                            if isinstance(bu2, str) and bu2:
+                                base_url = bu2
+                        except Exception:
+                            pass
+                    try:
+                        timeout_ms = int(to) if to is not None else timeout_ms
+                    except Exception:
+                        timeout_ms = timeout_ms
+            except Exception:
+                pass
         if not base_url:
             raise HTTPException(status_code=404, detail="llm.aux.url not configured")
-        url = base_url.rstrip("/") + "/health"
+        # Нормализация: если base_url указывает на endpoint completions, заменим на /health
+        base_clean = base_url.rstrip("/")
+        lower = base_clean.lower()
+        if lower.endswith("/health"):
+            url = base_clean
+        elif lower.endswith("/completion") or lower.endswith("/v1/completions") or lower.endswith("/v1/chat/completions"):
+            try:
+                url = base_clean.rsplit("/", 1)[0] + "/health"
+            except Exception:
+                url = base_clean + "/health"
+        else:
+            url = base_clean + "/health"
         timeout = aiohttp.ClientTimeout(total=max(0.5, timeout_ms / 1000.0))
         async with aiohttp.ClientSession(timeout=timeout) as sess:
             async with sess.get(url) as resp:
@@ -1137,97 +1197,638 @@ async def aux_llm_completion(request: Request):
             raise HTTPException(status_code=400, detail="empty body")
         base_url: Optional[str] = None
         timeout_ms: int = 5000
+        retries_svc: int = 0
+        aux_model_default: str = "gpt-3.5-turbo"
+        aux_api_key: Optional[str] = None
+        # KV-параметры reasoning-профиля (по умолчанию выключен)
+        reasoning_enabled: bool = False
+        reasoning_request_types: list[str] = []
+        reasoning_ctx_size: Optional[int] = None
+        reasoning_temp: Optional[float] = None
+        reasoning_top_p: Optional[float] = None
+        # Приоритет ENV override на узле (изоляция APP1)
         try:
-            from .services.soul_settings_service import SoulSettingsService as _SS
-            async with get_db_session() as db:  # type: ignore
-                svc = _SS()
-                # Приоритет: bot.phi.api_url → llm.phi.url → llm.aux.url → lima.base_url
-                bu = await svc.get_setting("bot.phi.api_url", db)
-                if not (isinstance(bu, str) and bu):
-                    bu = await svc.get_setting("llm.phi.url", db)
-                if not (isinstance(bu, str) and bu):
-                    bu = await svc.get_setting("llm.aux.url", db)
-                to = await svc.get_setting("lima.timeout_ms", db)
-                if isinstance(bu, str) and bu:
-                    base_url = bu
-                if not base_url:
-                    try:
-                        bu2 = await svc.get_setting("lima.base_url", db)
-                        if isinstance(bu2, str) and bu2:
-                            base_url = bu2
-                    except Exception:
-                        pass
-                try:
-                    timeout_ms = int(to) if to is not None else timeout_ms
-                except Exception:
-                    timeout_ms = timeout_ms
+            from .config import get_settings as _gs  # type: ignore
+            _cfg = _gs()
+            env_aux = getattr(_cfg, "llm_aux_api_url", None)
+            if isinstance(env_aux, str) and env_aux.strip():
+                base_url = env_aux.strip()
         except Exception:
             pass
-        # Доп. fallback: ENV переменная llm_aux_api_url из конфигурации
+        # Если ENV не задан — читаем из БД (bot.phi.api_url → llm.phi.url → llm.aux.url → lima.base_url)
         if not base_url:
             try:
-                from .config import get_settings as _gs  # type: ignore
-                _cfg = _gs()
-                env_aux = getattr(_cfg, "llm_aux_api_url", None)
-                if isinstance(env_aux, str) and env_aux.strip():
-                    base_url = env_aux.strip()
+                from .services.soul_settings_service import SoulSettingsService as _SS
+                from .services.secrets_service import SecretsService as _SEC  # type: ignore
+                async with get_db_session() as db:  # type: ignore
+                    svc = _SS()
+                    sec = _SEC()
+                    bu = await svc.get_setting("bot.phi.api_url", db)
+                    if not (isinstance(bu, str) and bu):
+                        bu = await svc.get_setting("llm.phi.url", db)
+                    if not (isinstance(bu, str) and bu):
+                        bu = await svc.get_setting("llm.aux.url", db)
+                    # Prefer Aux-specific timeout/retries, fallback to lima.timeout_ms
+                    to = await svc.get_setting("llm.aux.timeout_ms.svc", db)
+                    if to is None:
+                        to = await svc.get_setting("lima.timeout_ms", db)
+                    try:
+                        m = await svc.get_setting("llm.aux.model", db)
+                        if isinstance(m, str) and m.strip():
+                            aux_model_default = m.strip()
+                    except Exception:
+                        pass
+                    try:
+                        ak = await sec.get_secret(db, "llm.aux.api_key")
+                        if isinstance(ak, str) and ak.strip():
+                            aux_api_key = ak.strip()
+                    except Exception:
+                        aux_api_key = None
+                    # Загрузка KV для reasoning профиля
+                    try:
+                        reasoning_enabled = bool(await svc.get_setting("llm.aux.reasoning.enabled", db, False))
+                    except Exception:
+                        reasoning_enabled = False
+                    try:
+                        _rt = await svc.get_setting("llm.aux.reasoning.request_types", db, [])
+                        if isinstance(_rt, list):
+                            reasoning_request_types = [str(x).strip().lower() for x in _rt if isinstance(x, (str,))]
+                        elif isinstance(_rt, str):
+                            reasoning_request_types = [s.strip().lower() for s in _rt.split(',') if s.strip()]
+                    except Exception:
+                        reasoning_request_types = []
+                    try:
+                        _ctx = await svc.get_setting("llm.aux.reasoning.ctx_size", db, None)
+                        reasoning_ctx_size = int(_ctx) if _ctx is not None else None
+                    except Exception:
+                        reasoning_ctx_size = None
+                    try:
+                        _tp = await svc.get_setting("llm.aux.reasoning.temp", db, None)
+                        reasoning_temp = float(_tp) if _tp is not None else None
+                    except Exception:
+                        reasoning_temp = None
+                    try:
+                        _topp = await svc.get_setting("llm.aux.reasoning.top_p", db, None)
+                        reasoning_top_p = float(_topp) if _topp is not None else None
+                    except Exception:
+                        reasoning_top_p = None
+                    try:
+                        _retries = await svc.get_setting("llm.aux.retries.svc", db, None)
+                        retries_svc = max(0, int(_retries)) if _retries is not None else 0
+                    except Exception:
+                        retries_svc = 0
+                    if isinstance(bu, str) and bu:
+                        base_url = bu
+                    if not base_url:
+                        try:
+                            bu2 = await svc.get_setting("lima.base_url", db)
+                            if isinstance(bu2, str) and bu2:
+                                base_url = bu2
+                        except Exception:
+                            pass
+                    try:
+                        timeout_ms = int(to) if to is not None else timeout_ms
+                    except Exception:
+                        timeout_ms = timeout_ms
             except Exception:
                 pass
         if not base_url:
             raise HTTPException(status_code=404, detail="llm.aux.url not configured")
-        # Phi/Aux сервер: если base_url уже указывает на конкретный endpoint, используем его как есть
+        # Phi/Aux сервер: сначала нормализуем base, затем определим формат тела (messages vs prompt)
         base_clean = base_url.rstrip("/")
         lower = base_clean.lower()
-        if lower.endswith("/completion") or lower.endswith("/v1/completions") or lower.endswith("/v1/chat/completions"):
-            targets = [base_clean]
-        else:
-            # иначе пробуем совместимые пути в порядке предпочтения
-            targets = [
-                f"{base_clean}/v1/completions",
-                f"{base_clean}/completion",
-                f"{base_clean}/v1/chat/completions",
-            ]
-        timeout = aiohttp.ClientTimeout(total=max(1.0, timeout_ms / 1000.0))
-        headers = {"Content-Type": request.headers.get("content-type", "application/json")}
+        # Если в настройке по ошибке задан /health — уберём его для корректного построения таргетов
+        if lower.endswith("/health"):
+            try:
+                base_clean = base_clean.rsplit("/", 1)[0]
+                lower = base_clean.lower()
+            except Exception:
+                pass
         # Гарантируем корректный JSON при проксировании: пробуем распарсить и отправить как JSON,
-        # при неудаче — отправляем как бинарные данные (совместимость)
+        # при неудаче — формируем корректный JSON server-side (не пересылаем «сырые» тела)
         json_payload = None
         try:
             json_payload = json.loads(body.decode("utf-8"))
         except Exception:
             json_payload = None
+        # Текст для fallback, если JSON не распарсился
+        fallback_text: str = ""
+        if json_payload is None:
+            try:
+                fallback_text = body.decode("utf-8", errors="replace").strip()
+            except Exception:
+                fallback_text = ""
+        has_messages = bool(isinstance(json_payload, dict) and isinstance(json_payload.get("messages"), list))
+        # request_type (если прислан клиентом)
+        incoming_request_type = None
+        if isinstance(json_payload, dict):
+            try:
+                incoming_request_type = str(json_payload.get("request_type") or "").strip().lower() or None
+            except Exception:
+                incoming_request_type = None
+        # Активируем reasoning, если включен и подходит по типу
+        is_reasoning = bool(reasoning_enabled and (not reasoning_request_types or (incoming_request_type in reasoning_request_types)))
+        # Если base уже указывает на конкретный endpoint — используем как есть
+        if lower.endswith("/completion") or lower.endswith("/v1/completions") or lower.endswith("/v1/chat/completions"):
+            targets = [base_clean]
+        else:
+            # Предпочтения по формату (chat → optional):
+            # - при наличии messages теперь предпочитаем стабильный prompt-путь /completion, chat остаётся опциональным
+            # - иначе (prompt/сырой) → /completion, затем OpenAI completions, затем chat
+            if has_messages:
+                targets = [
+                    f"{base_clean}/completion",
+                    f"{base_clean}/v1/completions",
+                    f"{base_clean}/v1/chat/completions",
+                ]
+            else:
+                targets = [
+                    f"{base_clean}/completion",
+                    f"{base_clean}/v1/completions",
+                    f"{base_clean}/v1/chat/completions",
+                ]
+        timeout = aiohttp.ClientTimeout(total=max(1.0, timeout_ms / 1000.0))
+        headers = {"Content-Type": "application/json; charset=utf-8", "Accept": "application/json", "Accept-Encoding": "identity"}
+        if aux_api_key:
+            headers["Authorization"] = f"Bearer {aux_api_key}"
         async with aiohttp.ClientSession(timeout=timeout) as sess:
             last_err_txt = None
             for target in targets:
                 try:
                     if json_payload is not None:
-                        # Ничего не преобразуем: проксируем как есть
-                        async with sess.post(target, json=json_payload, headers={"Content-Type": "application/json"}) as resp:
-                            txt = await resp.text()
+                        # Адаптация форматов для совместимости
+                        payload_to_send = dict(json_payload)
+                        tgt_low = (target or "").lower()
+                        is_openai_chat = tgt_low.endswith("/v1/chat/completions")
+                        is_openai_comp = tgt_low.endswith("/v1/completions")
+                        is_llama_completion = tgt_low.endswith("/completion")
+                        # 1) Если клиент прислал messages для OpenAI chat — маппим n_predict→max_tokens и ставим model по умолчанию
+                        if is_openai_chat and isinstance(payload_to_send.get("messages"), list):
+                            if "max_tokens" not in payload_to_send and "n_predict" in payload_to_send:
+                                try:
+                                    payload_to_send["max_tokens"] = int(payload_to_send.pop("n_predict") or 0) or 128
+                                except Exception:
+                                    payload_to_send["max_tokens"] = 128
+                            if "model" not in payload_to_send:
+                                payload_to_send["model"] = aux_model_default
+                            # Применяем профиль reasoning на параметры инференса
+                            if is_reasoning:
+                                try:
+                                    if reasoning_temp is not None and "temperature" not in payload_to_send:
+                                        payload_to_send["temperature"] = float(reasoning_temp)
+                                except Exception:
+                                    pass
+                                try:
+                                    if reasoning_top_p is not None and "top_p" not in payload_to_send:
+                                        payload_to_send["top_p"] = float(reasoning_top_p)
+                                except Exception:
+                                    pass
+                            else:
+                                # Сервисный профиль: жёсткий лимит на температуру и токены
+                                try:
+                                    if "temperature" in payload_to_send:
+                                        payload_to_send["temperature"] = min(float(payload_to_send["temperature"]), 0.2)
+                                    else:
+                                        payload_to_send["temperature"] = 0.2
+                                except Exception:
+                                    payload_to_send["temperature"] = 0.2
+                                try:
+                                    if "max_tokens" in payload_to_send:
+                                        payload_to_send["max_tokens"] = min(int(payload_to_send["max_tokens"]), 200)
+                                    else:
+                                        payload_to_send["max_tokens"] = 200
+                                except Exception:
+                                    payload_to_send["max_tokens"] = 200
+                        # 2) Если клиент прислал messages, но таргет не chat — сведём к prompt (User/Assistant схема)
+                        elif isinstance(payload_to_send.get("messages"), list) and not is_openai_chat:
                             try:
-                                from .lib.observability import metrics as _m  # type: ignore
-                                _m.incr("llm_aux_req_total", {"route": "completion"})
-                                _m.observe("llm_aux_latency_ms", (time.time() - _t0) * 1000.0, {"route": "completion"})
-                                if int(resp.status) >= 400:
-                                    _m.incr("llm_aux_err_total", {"route": "completion", "status": int(resp.status)})
+                                msgs = payload_to_send.get("messages") or []
+                                lines = []
+                                if is_reasoning:
+                                    lines.append("System: Think silently. Do not reveal your reasoning. At the end print exactly: 'Solution: <final answer>'. Output nothing else.")
+                                for m in msgs:
+                                    role = (m.get("role") or "user").strip().lower()
+                                    content = (m.get("content") or "").strip()
+                                    if not content:
+                                        continue
+                                    if role == "system":
+                                        prefix = "System: "
+                                    elif role == "assistant":
+                                        prefix = "Assistant: "
+                                    else:
+                                        prefix = "User: "
+                                    lines.append(prefix + content)
+                                lines.append("Assistant:")
+                                payload_to_send = {
+                                    "prompt": "\n".join(lines),
+                                    "n_predict": int(payload_to_send.get("n_predict") or payload_to_send.get("max_tokens") or 128),
+                                }
+                                # Для llama.cpp /completion гарантируем отсутствие стриминга
+                                if is_llama_completion:
+                                    try:
+                                        payload_to_send["stream"] = False
+                                    except Exception:
+                                        pass
+                                # Сервисный профиль: ограничение параметров
+                                if not is_reasoning:
+                                    try:
+                                        payload_to_send["n_predict"] = min(int(payload_to_send.get("n_predict") or 128), 200)
+                                    except Exception:
+                                        payload_to_send["n_predict"] = 200
+                                    try:
+                                        if "temperature" in payload_to_send:
+                                            payload_to_send["temperature"] = min(float(payload_to_send["temperature"]), 0.2)
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                # как есть
+                                pass
+                        # 3) Если таргет OpenAI completions — маппим поля и, при отсутствии model, подставим дефолт
+                        elif is_openai_comp:
+                            if "n_predict" in payload_to_send and "max_tokens" not in payload_to_send:
+                                try:
+                                    payload_to_send["max_tokens"] = int(payload_to_send.pop("n_predict") or 0) or 128
+                                except Exception:
+                                    payload_to_send["max_tokens"] = 128
+                            if "model" not in payload_to_send:
+                                try:
+                                    payload_to_send["model"] = aux_model_default
+                                except Exception:
+                                    pass
+                            if isinstance(payload_to_send.get("messages"), list) and "prompt" not in payload_to_send:
+                                try:
+                                    msgs = payload_to_send.get("messages") or []
+                                    lines = []
+                                    if is_reasoning:
+                                        lines.append("System: Think silently. Do not reveal your reasoning. At the end print exactly: 'Solution: <final answer>'. Output nothing else.")
+                                    for m in msgs:
+                                        role = (m.get("role") or "user").strip().lower()
+                                        content = (m.get("content") or "").strip()
+                                        if not content:
+                                            continue
+                                        if role == "system":
+                                            prefix = "System: "
+                                        elif role == "assistant":
+                                            prefix = "Assistant: "
+                                        else:
+                                            prefix = "User: "
+                                        lines.append(prefix + content)
+                                    lines.append("Assistant:")
+                                    payload_to_send["prompt"] = "\n".join(lines)
+                                    # удаляем messages, чтобы не путать upstream
+                                    payload_to_send.pop("messages", None)
+                                except Exception:
+                                    pass
+                            # Сервисный профиль: ограничения
+                            if not is_reasoning:
+                                try:
+                                    if "max_tokens" in payload_to_send:
+                                        payload_to_send["max_tokens"] = min(int(payload_to_send["max_tokens"]), 200)
+                                except Exception:
+                                    pass
+                                try:
+                                    if "temperature" in payload_to_send:
+                                        payload_to_send["temperature"] = min(float(payload_to_send["temperature"]), 0.2)
+                                except Exception:
+                                    pass
+                        # 4) Если таргет llama.cpp /completion и переданы messages — конвертируем в prompt
+                        elif is_llama_completion and isinstance(payload_to_send.get("messages"), list):
+                            try:
+                                msgs = payload_to_send.get("messages") or []
+                                lines = []
+                                if is_reasoning:
+                                    lines.append("System: Think silently. Do not reveal your reasoning. At the end print exactly: 'Solution: <final answer>'. Output nothing else.")
+                                for m in msgs:
+                                    role = (m.get("role") or "user").strip().lower()
+                                    content = (m.get("content") or "").strip()
+                                    if not content:
+                                        continue
+                                    if role == "system":
+                                        prefix = "System: "
+                                    elif role == "assistant":
+                                        prefix = "Assistant: "
+                                    else:
+                                        prefix = "User: "
+                                    lines.append(prefix + content)
+                                lines.append("Assistant:")
+                                payload_to_send = {
+                                    "prompt": "\n".join(lines),
+                                    "n_predict": int(payload_to_send.get("n_predict") or payload_to_send.get("max_tokens") or 128),
+                                }
+                                try:
+                                    payload_to_send["stream"] = False
+                                except Exception:
+                                    pass
+                                if not is_reasoning:
+                                    try:
+                                        payload_to_send["n_predict"] = min(int(payload_to_send.get("n_predict") or 128), 200)
+                                    except Exception:
+                                        payload_to_send["n_predict"] = 200
                             except Exception:
                                 pass
+
+                        # Санитизация тела для llama.cpp /completion: оставляем только допустимые поля
+                        if is_llama_completion and isinstance(payload_to_send, dict):
+                            try:
+                                allowed_keys = {
+                                    "prompt", "n_predict", "temperature", "top_p", "top_k", "min_p",
+                                    "typical_p", "repeat_penalty", "presence_penalty", "frequency_penalty",
+                                    "stop", "stream", "seed"
+                                }
+                                payload_to_send = {k: v for k, v in payload_to_send.items() if k in allowed_keys}
+                                # По умолчанию выключаем стриминг, если не задан
+                                try:
+                                    if "stream" not in payload_to_send:
+                                        payload_to_send["stream"] = False
+                                except Exception:
+                                    pass
+                                # Сервисный профиль: жёсткие лимиты
+                                if not is_reasoning:
+                                    try:
+                                        if "n_predict" in payload_to_send:
+                                            payload_to_send["n_predict"] = min(int(payload_to_send["n_predict"]), 200)
+                                    except Exception:
+                                        pass
+                                    try:
+                                        if "temperature" in payload_to_send:
+                                            payload_to_send["temperature"] = min(float(payload_to_send["temperature"]), 0.2)
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                        # Ретраи для JSON-запросов
+                        for _attempt in range(max(1, int(retries_svc) + 1)):
+                            # Some llama.cpp builds are strict about JSON encoding; send raw bytes
+                            if is_llama_completion:
+                                try:
+                                    _bytes = json.dumps(payload_to_send, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+                                except Exception:
+                                    _bytes = json.dumps(payload_to_send).encode("utf-8")
+                                async with sess.post(target, data=_bytes, headers=headers) as resp:
+                                    txt = await resp.text()
+                            else:
+                                async with sess.post(target, json=payload_to_send, headers=headers) as resp:
+                                    txt = await resp.text()
+                                # Fallback for some llama.cpp builds: try GET with query params when JSON parse fails
+                                if is_llama_completion and int(resp.status) >= 400:
+                                    try:
+                                        jr_test = json.loads(txt)
+                                    except Exception:
+                                        jr_test = None
+                                    try:
+                                        looks_like_parse_err = isinstance(jr_test, dict) and isinstance(jr_test.get("error"), dict) and "parse error" in str(jr_test.get("error", {}).get("message", "")).lower()
+                                    except Exception:
+                                        looks_like_parse_err = False
+                                    if looks_like_parse_err:
+                                        try:
+                                            q = {
+                                                "prompt": str((payload_to_send or {}).get("prompt") or ""),
+                                                "n_predict": int((payload_to_send or {}).get("n_predict") or 128),
+                                            }
+                                            # Optional knobs
+                                            if "temperature" in (payload_to_send or {}):
+                                                try:
+                                                    q["temperature"] = float((payload_to_send or {}).get("temperature"))
+                                                except Exception:
+                                                    pass
+                                            # Build GET URL pointing to host root (/) for llama.cpp GET API
+                                            try:
+                                                _u = str(target or "")
+                                                _p = _u.find("://")
+                                                _j = _u.find("/", _p + 3) if _p != -1 else _u.find("/")
+                                                _base_root = (_u[: _j + 1]) if _j != -1 else (_u.rstrip("/") + "/")
+                                            except Exception:
+                                                _base_root = target
+                                            async with sess.get(_base_root, params=q, headers={k: v for k, v in headers.items() if k.lower() != "content-type"}) as _resp_get:
+                                                _txt_get = await _resp_get.text()
+                                            if 200 <= int(_resp_get.status) < 400:
+                                                try:
+                                                    from .lib.observability import metrics as _m  # type: ignore
+                                                    _m.incr("llm_aux_req_total", {"route": "completion", "request_type": (incoming_request_type or ("reasoning" if is_reasoning else "service"))})
+                                                    _m.observe("llm_aux_latency_ms", (time.time() - _t0) * 1000.0, {"route": "completion", "request_type": (incoming_request_type or ("reasoning" if is_reasoning else "service"))})
+                                                except Exception:
+                                                    pass
+                                                if is_reasoning:
+                                                    try:
+                                                        from .utils.aux_sanitizer import extract_solution_only as _extract_solution3  # type: ignore
+                                                        _txt_get = _extract_solution3(_txt_get)
+                                                    except Exception:
+                                                        pass
+                                                return JSONResponse(content={"status": int(_resp_get.status), "body": _txt_get[:8000]})
+                                        except Exception:
+                                            pass
+                                # Санитайзер: извлекаем Solution в reasoning-режиме
+                                try:
+                                    from .utils.aux_sanitizer import extract_solution_only as _extract_solution  # type: ignore
+                                except Exception:
+                                    _extract_solution = lambda x: x  # type: ignore
+                                # STOP-маркеры для отсечения хвостов в сервисном профиле
+                                if not is_reasoning:
+                                    try:
+                                        # Отрезаем по первым встречам служебных маркеров
+                                        for stop_marker in ("\nSolution:", "\nAssistant:", "\nSYSTEM:", "\nTHOUGHT:"):
+                                            idx = txt.find(stop_marker)
+                                            if idx != -1:
+                                                txt = txt[:idx]
+                                                break
+                                    except Exception:
+                                        pass
+                            try:
+                                from .lib.observability import metrics as _m  # type: ignore
+                                _m.incr("llm_aux_req_total", {"route": "completion", "request_type": (incoming_request_type or ("reasoning" if is_reasoning else "service"))})
+                                _m.observe("llm_aux_latency_ms", (time.time() - _t0) * 1000.0, {"route": "completion", "request_type": (incoming_request_type or ("reasoning" if is_reasoning else "service"))})
+                                if int(resp.status) >= 500:
+                                    _m.incr("llm_aux_err_total", {"route": "completion", "status": int(resp.status), "request_type": (incoming_request_type or ("reasoning" if is_reasoning else "service"))})
+                            except Exception:
+                                pass
+                            # Для OpenAI-совместимых ответов: если пришёл JSON с полем error — пробуем следующий таргет
+                            try:
+                                jr = json.loads(txt)
+                                if isinstance(jr, dict) and ("error" in jr) and (not is_llama_completion):
+                                    last_err_txt = f"upstream_error target={target} err={str(jr.get('error'))[:256]}"
+                                    break  # к следующему таргету
+                            except Exception:
+                                pass
+                            if is_reasoning:
+                                txt = _extract_solution(txt)
+                            # При 4xx пробуем следующий таргет (некоторые upstream требуют иной формат)
+                            if 400 <= int(resp.status) < 500:
+                                last_err_txt = f"{int(resp.status)} target={target} resp={txt[:160]}"
+                                break  # к следующему таргету
+                            # При 5xx делаем ретрай, затем следующий таргет
+                            if int(resp.status) >= 500:
+                                last_err_txt = f"{int(resp.status)} target={target} resp={txt[:160]}"
+                                if _attempt < int(retries_svc):
+                                    continue
+                                break
                             return JSONResponse(content={"status": resp.status, "body": txt[:8000]})
-                    async with sess.post(target, data=body, headers=headers) as resp:
-                        txt = await resp.text()
+                    # Fallback: формируем JSON на сервере из текстового тела
+                    payload_to_send = None
+                    try:
+                        tgt_low_fb = (target or "").lower()
+                        is_openai_chat_fb = tgt_low_fb.endswith("/v1/chat/completions")
+                        is_openai_comp_fb = tgt_low_fb.endswith("/v1/completions")
+                        is_llama_completion_fb = tgt_low_fb.endswith("/completion")
+                        if is_llama_completion_fb:
+                            payload_to_send = {
+                                "prompt": fallback_text,
+                                "n_predict": 128,
+                            }
+                            try:
+                                payload_to_send["stream"] = False
+                            except Exception:
+                                pass
+                            if not is_reasoning:
+                                try:
+                                    payload_to_send["n_predict"] = min(int(payload_to_send.get("n_predict") or 128), 200)
+                                except Exception:
+                                    payload_to_send["n_predict"] = 200
+                        elif is_openai_comp_fb:
+                            payload_to_send = {
+                                "prompt": fallback_text,
+                                "max_tokens": 128,
+                                "model": aux_model_default,
+                            }
+                            if not is_reasoning:
+                                try:
+                                    payload_to_send["max_tokens"] = min(int(payload_to_send.get("max_tokens") or 128), 200)
+                                except Exception:
+                                    payload_to_send["max_tokens"] = 200
+                        elif is_openai_chat_fb:
+                            payload_to_send = {
+                                "model": aux_model_default,
+                                "messages": [{"role": "user", "content": fallback_text}],
+                                "max_tokens": 128,
+                            }
+                            if not is_reasoning:
+                                try:
+                                    payload_to_send["max_tokens"] = min(int(payload_to_send.get("max_tokens") or 128), 200)
+                                except Exception:
+                                    payload_to_send["max_tokens"] = 200
+                        else:
+                            # как безопасный дефолт — попытка /completion-совместимого формата
+                            payload_to_send = {
+                                "prompt": fallback_text,
+                                "n_predict": 128,
+                            }
+                            try:
+                                payload_to_send["stream"] = False
+                            except Exception:
+                                pass
+                            if not is_reasoning:
+                                try:
+                                    payload_to_send["n_predict"] = min(int(payload_to_send.get("n_predict") or 128), 200)
+                                except Exception:
+                                    payload_to_send["n_predict"] = 200
+                        # сервисный профиль по температуре (если присутствует)
+                        if not is_reasoning:
+                            try:
+                                if "temperature" in payload_to_send:
+                                    payload_to_send["temperature"] = min(float(payload_to_send["temperature"]), 0.2)
+                            except Exception:
+                                pass
+                    except Exception:
+                        payload_to_send = {"prompt": fallback_text, "n_predict": 128}
+                    for _attempt in range(max(1, int(retries_svc) + 1)):
+                        if is_llama_completion_fb:
+                            try:
+                                _bytes2 = json.dumps(payload_to_send, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+                            except Exception:
+                                _bytes2 = json.dumps(payload_to_send).encode("utf-8")
+                            async with sess.post(target, data=_bytes2, headers=headers) as resp:
+                                txt = await resp.text()
+                        else:
+                            async with sess.post(target, json=payload_to_send, headers=headers) as resp:
+                                txt = await resp.text()
+                            # Fallback: on JSON parse errors from llama.cpp, try GET with query params
+                            if is_llama_completion_fb and int(resp.status) >= 400:
+                                try:
+                                    jr_test = json.loads(txt)
+                                except Exception:
+                                    jr_test = None
+                                try:
+                                    looks_like_parse_err = isinstance(jr_test, dict) and isinstance(jr_test.get("error"), dict) and "parse error" in str(jr_test.get("error", {}).get("message", "")).lower()
+                                except Exception:
+                                    looks_like_parse_err = False
+                                if looks_like_parse_err:
+                                    try:
+                                        q = {
+                                            "prompt": str((payload_to_send or {}).get("prompt") or fallback_text or ""),
+                                            "n_predict": int((payload_to_send or {}).get("n_predict") or 128),
+                                        }
+                                        if "temperature" in (payload_to_send or {}):
+                                            try:
+                                                q["temperature"] = float((payload_to_send or {}).get("temperature"))
+                                            except Exception:
+                                                pass
+                                        try:
+                                            _u2 = str(target or "")
+                                            _p2 = _u2.find("://")
+                                            _j2 = _u2.find("/", _p2 + 3) if _p2 != -1 else _u2.find("/")
+                                            _base_root2 = (_u2[: _j2 + 1]) if _j2 != -1 else (_u2.rstrip("/") + "/")
+                                        except Exception:
+                                            _base_root2 = target
+                                        async with sess.get(_base_root2, params=q, headers={k: v for k, v in headers.items() if k.lower() != "content-type"}) as _resp_get2:
+                                            _txt_get2 = await _resp_get2.text()
+                                        if 200 <= int(_resp_get2.status) < 400:
+                                            try:
+                                                from .lib.observability import metrics as _m  # type: ignore
+                                                _m.incr("llm_aux_req_total", {"route": "completion", "request_type": (incoming_request_type or ("reasoning" if is_reasoning else "service"))})
+                                                _m.observe("llm_aux_latency_ms", (time.time() - _t0) * 1000.0, {"route": "completion", "request_type": (incoming_request_type or ("reasoning" if is_reasoning else "service"))})
+                                            except Exception:
+                                                pass
+                                            if is_reasoning:
+                                                try:
+                                                    from .utils.aux_sanitizer import extract_solution_only as _extract_solution4  # type: ignore
+                                                    _txt_get2 = _extract_solution4(_txt_get2)
+                                                except Exception:
+                                                    pass
+                                            return JSONResponse(content={"status": int(_resp_get2.status), "body": _txt_get2[:8000]})
+                                    except Exception:
+                                        pass
                         try:
                             from .lib.observability import metrics as _m  # type: ignore
-                            _m.incr("llm_aux_req_total", {"route": "completion"})
-                            _m.observe("llm_aux_latency_ms", (time.time() - _t0) * 1000.0, {"route": "completion"})
-                            if int(resp.status) >= 400:
-                                _m.incr("llm_aux_err_total", {"route": "completion", "status": int(resp.status)})
+                            _m.incr("llm_aux_req_total", {"route": "completion", "request_type": (incoming_request_type or ("reasoning" if is_reasoning else "service"))})
+                            _m.observe("llm_aux_latency_ms", (time.time() - _t0) * 1000.0, {"route": "completion", "request_type": (incoming_request_type or ("reasoning" if is_reasoning else "service"))})
+                            if int(resp.status) >= 500:
+                                _m.incr("llm_aux_err_total", {"route": "completion", "status": int(resp.status), "request_type": (incoming_request_type or ("reasoning" if is_reasoning else "service"))})
                         except Exception:
                             pass
+                        if is_reasoning:
+                            try:
+                                from .utils.aux_sanitizer import extract_solution_only as _extract_solution2  # type: ignore
+                                txt = _extract_solution2(txt)
+                            except Exception:
+                                pass
+                        else:
+                            # STOP-маркеры для текстового ответа (сервисный профиль)
+                            try:
+                                for stop_marker in ("\nSolution:", "\nAssistant:", "\nSYSTEM:", "\nTHOUGHT:"):
+                                    idx = txt.find(stop_marker)
+                                    if idx != -1:
+                                        txt = txt[:idx]
+                                        break
+                            except Exception:
+                                pass
+                        if 400 <= int(resp.status) < 500:
+                            last_err_txt = f"{int(resp.status)} target={target} resp={txt[:160]}"
+                            break
+                        if int(resp.status) >= 500:
+                            last_err_txt = f"{int(resp.status)} target={target} resp={txt[:160]}"
+                            if _attempt < int(retries_svc):
+                                continue
+                            break
                         return JSONResponse(content={"status": resp.status, "body": txt[:8000]})
                 except Exception as _e_try:
-                    last_err_txt = str(_e_try)
+                    last_err_txt = f"{type(_e_try).__name__} target={target} err={_e_try}"
                     continue
-            raise HTTPException(status_code=502, detail=f"aux completion failed: {last_err_txt}")
+            try:
+                debug_targets = ",".join(targets)  # type: ignore[name-defined]
+            except Exception:
+                debug_targets = ""
+            if not last_err_txt:
+                last_err_txt = "no_details_captured"
+            raise HTTPException(status_code=502, detail=f"aux completion failed: {last_err_txt} | targets={debug_targets}")
     except HTTPException:
         raise
     except Exception as e:
@@ -1238,6 +1839,60 @@ async def aux_llm_completion(request: Request):
             pass
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# Admin debug: resolve Aux LLM base_url and targets without sending traffic
+@app.get("/api/admin/aux-llm/debug")
+async def aux_llm_debug(_admin=Depends(require_permission("soul.admin"))):
+    try:
+        base_url: Optional[str] = None
+        try:
+            from .config import get_settings as _gs  # type: ignore
+            _cfg = _gs()
+            env_aux = getattr(_cfg, "llm_aux_api_url", None)
+            if isinstance(env_aux, str) and env_aux.strip():
+                base_url = env_aux.strip()
+        except Exception:
+            pass
+        if not base_url:
+            try:
+                from .services.soul_settings_service import SoulSettingsService as _SS
+                async with get_db_session() as db:  # type: ignore
+                    svc = _SS()
+                    bu = await svc.get_setting("bot.phi.api_url", db)
+                    if not (isinstance(bu, str) and bu):
+                        bu = await svc.get_setting("llm.phi.url", db)
+                    if not (isinstance(bu, str) and bu):
+                        bu = await svc.get_setting("llm.aux.url", db)
+                    if isinstance(bu, str) and bu:
+                        base_url = bu
+                    if not base_url:
+                        bu2 = await svc.get_setting("lima.base_url", db)
+                        if isinstance(bu2, str) and bu2:
+                            base_url = bu2
+            except Exception:
+                pass
+        if not base_url:
+            return {"base_url": None, "targets": [], "note": "no base_url resolved"}
+        base_clean = base_url.rstrip("/")
+        lower = base_clean.lower()
+        if lower.endswith("/health"):
+            try:
+                base_clean = base_clean.rsplit("/", 1)[0]
+                lower = base_clean.lower()
+            except Exception:
+                pass
+        # Формируем targets (без учёта messages)
+        if lower.endswith("/completion") or lower.endswith("/v1/completions") or lower.endswith("/v1/chat/completions"):
+            targets = [base_clean]
+        else:
+            targets = [
+                f"{base_clean}/completion",
+                f"{base_clean}/v1/completions",
+                f"{base_clean}/v1/chat/completions",
+            ]
+        return {"base_url": base_clean, "targets": targets}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- Minimal web-auth endpoints (compat) ---
 try:
@@ -1615,6 +2270,13 @@ async def get_metrics():
                         data["incidents_open_total"] = int(row_inc[1] or 0)
                         data["incident_mtta_ms"] = float(row_inc[2] or 0.0)
                         data["incident_mttr_ms"] = float(row_inc[3] or 0.0)
+                    # Backlog: открытые без runbook
+                    try:
+                        row_bkl = (await db.execute(_t("select count(*) from incidents where status='open' and runbook_id is null"))).first()
+                        if row_bkl:
+                            data["incident_master_backlog_size"] = int(row_bkl[0] or 0)
+                    except Exception:
+                        pass
                     # Разрез по severity
                     rows_sev = (await db.execute(_t(
                         """
@@ -1664,6 +2326,7 @@ async def get_metrics():
                         "incidents_created_total_by_severity": by_sev,
                         "incidents_created_total_by_source": by_src,
                         "incident_stage_latency_ms": stage,
+                        "incident_master_backlog_size": data.get("incident_master_backlog_size", 0),
                     }
         except Exception:
             pass
