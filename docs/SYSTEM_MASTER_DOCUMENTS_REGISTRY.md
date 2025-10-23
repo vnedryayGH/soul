@@ -1,6 +1,6 @@
 # SYSTEM MASTER DOCUMENTS REGISTRY
 
-Last update: 2025-10-22 (P66 Context Management added; .cursorrules optimized -54.9%; operational/extended logs templates)
+Last update: 2025-10-23 (P67: deploy orchestrator applied; router health OK; smoke OK; CLI UTF-8 output fixed; P66 context policies unchanged)
 
 ## P66 — Context Management and Operational Logs (NEW)
 
@@ -16,7 +16,44 @@ Last update: 2025-10-22 (P66 Context Management added; .cursorrules optimized -5
   - Extended log: 300-1000 строк (~5-15K токенов)
   - `.cursorrules`: 483→271 строк, 5029→2266 токенов (-54.9%)
 
-Last update: 2025-10-19 (Hyperloop 502 postmortem added; systemd/nginx/RS policies synced; GitHub Admin CLI consolidated)
+## P67 — Hybrid Cursor Agent Router (NEW)
+
+- ТЗ: `Soul/P67_TZ_Cursor_Hybrid_Agent_Router_v1_0.md`
+- Назначение: Превратить Cursor в UI ($20/мес) при полном контроле логики в Soul; маршрутизация запросов на DSL/Template/AUX‑LLM/External LLM, минимизируя стоимость токенов
+- Экономия: ~$70/мес vs ~$1000/мес (≈93% при 7B токенов/2 мес)
+- Компоненты:
+  - Router (OpenAI‑совместимый): `backend/app/routers/cursor_agent_router.py` (POST `/api/cursor-agent-router/completion`, GET `/health`, `/stats`)
+  - Classifier: `backend/app/services/cursor_router_classifier.py` (keywords/patterns)
+  - Context Loader: `backend/app/services/cursor_router_context.py` (minimal/full)
+  - Executors: `backend/app/services/cursor_router_executor.py` (DSL/Template/AUX‑LLM/External)
+  - Метрики БД: `backend/alembic/manual_sql/cursor_routing_stats_table.sql` (`cursor_routing_stats`, view `cursor_routing_stats_summary`)
+- Документация:
+  - Quick start: `CURSOR_P67_QUICK_START.md`
+  - Setup guide (Cursor IDE): `docs/CURSOR_SETUP_P67_ROUTER.md`
+  - Deploy checklist: `DEPLOY_P67_CHECKLIST.md`
+  - Phase 2 roadmap: `Soul/P67_PHASE2_ROADMAP.md`
+  - Implementation report: `reports/P67_implementation_report_20251022.md`
+  - Deployment & Smoke (2025-10-23): orchestrator apply passed; `GET /api/cursor-agent-router/health` = ok; smoke `POST /completion` → metadata.routing_type="dsl", usage.completion_tokens=0
+- Интеграции и политики:
+  - Delivery Guard (P27): валидация ответов до выдачи пользователю (этап интеграции в Phase 2)
+  - MIRROR (P48): фиксация всех действий роутера (этап интеграции в Phase 2)
+  - Two‑Keys (P44): прод‑деплой через `TWO_KEYS.REQUEST/APPROVE`
+  - Context (P66): чтение `SESSION_BRIEF.md` и `cursor.agent.task.json` как первичных источников
+
+## Cursor Offload Policy / TOP-30 Enforcement (P67/P58)
+
+- Spec: `docs/TOP30_Cursor_Offload_v1_0.md`
+- Router: `backend/app/routers/cursor_agent_router.py` enforces safe TOP-30 DSL where applicable via `cursor.router.enforce_top30=true`
+- Delivery Guard (P27) and MIRROR are mandatory across all replies
+
+## Tools Registry (NEW)
+
+- Реестр вспомогательных скриптов/утилит: `docs/TOOLS_CATALOG.md`, `tools/registry/registry.v1.json`
+- Генерация: `python tools/registry/collector.py`
+- Поиск: `python tools/registry/cli.py tree <prefix>` или `... tags <t1> <t2>`
+- Правило .cursorrules: обязательное переиспользование существующих инструментов, создание новых — только при отсутствии аналогов
+
+Last update: 2025-10-23 (UTF-8 stdout fallbacks added to CLI tools: `hyperloop_cli.py`, `github_admin.py`, `hyperloop_post.py`, `llm_cli.py`; Hyperloop 502 postmortem preserved; systemd/nginx/RS policies synced)
 
 - P63 Recovery — Final Report: `docs/P63_RECOVERY_FINAL_REPORT_2025-10-19.md`
 - Hyperloop 502 — Postmortem: `docs/POSTMORTEM_2025-10-19_Hyperloop_502.md`
@@ -141,10 +178,11 @@ Artifacts:
 - `processor.kind_limits.reminder.max_concurrency=10`
 
 Links:
- - `CURSOR_AGENT_SYSTEM_PROMPT_EN.md` / `CURSOR_AGENT_SYSTEM_PROMPT_EN-arh.md` — updated with P62 CLI/Edge policy and inspector gates.
- - `Soul/P62_TZ_Soul_Visual_HR_Simulation_v1_0.md` — Acceptance & Operational requirements updated; added section 29 (three‑DB architecture: Settings/Data/Graph, DSN keys, indices, HA/backup, alerts).
- - `docs/PROJECT_STRUCTURE.md` — P62 admin endpoints reflected.
- - `docs/ops_disk_cleanup_2025-10-17.md` — Отчёт и регламент по чистке диска, таймерам и ротации логов.
+
+- `CURSOR_AGENT_SYSTEM_PROMPT_EN.md` / `CURSOR_AGENT_SYSTEM_PROMPT_EN-arh.md` — updated with P62 CLI/Edge policy and inspector gates.
+- `Soul/P62_TZ_Soul_Visual_HR_Simulation_v1_0.md` — Acceptance & Operational requirements updated; added section 29 (three‑DB architecture: Settings/Data/Graph, DSN keys, indices, HA/backup, alerts).
+- `docs/PROJECT_STRUCTURE.md` — P62 admin endpoints reflected.
+- `docs/ops_disk_cleanup_2025-10-17.md` — Отчёт и регламент по чистке диска, таймерам и ротации логов.
 
 ## P63 — Onboarding внешних разработчиков (RBAC/онбординг/реестры/напоминания)
 
