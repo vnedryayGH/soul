@@ -3,6 +3,7 @@ name: Offload Smokes (P58/P67)
 on:
   push:
     branches: [ main, devops/cursor-offload-p58-p48r-2025-10 ]
+    tags: [ '*' ]
   pull_request:
     branches: [ main ]
 
