@@ -21,6 +21,10 @@ try:
 except Exception:
     pass
 from fastapi import FastAPI
+from fastapi import Body, HTTPException
+from typing import Any, Dict, List, Optional
+import json as _json
+import urllib.request as _url
 from fastapi.responses import PlainTextResponse
 
 # Prefer relative imports within package to avoid PYTHONPATH issues on server
@@ -69,6 +73,12 @@ try:
     from tools.catalog.active.admin.hyperloop_admin import router as hyperloop_admin  # type: ignore
 except Exception:
     hyperloop_admin = None  # type: ignore
+    # Fallback: try local backend router if available
+    if hyperloop_admin is None:
+        try:
+            from .routers.hyperloop_admin import router as hyperloop_admin  # type: ignore
+        except Exception:
+            hyperloop_admin = None  # type: ignore
 
 try:
     from tools.catalog.active.utils.agent_exec import router as agent_exec_admin  # type: ignore
@@ -98,6 +108,12 @@ try:
     from tools.catalog.active.admin.two_keys_admin import router as two_keys_admin  # type: ignore
 except Exception:
     two_keys_admin = None  # type: ignore
+
+# Optional Soul Admin (settings utilities)
+try:
+    from tools.catalog.active.admin.soul_admin import router as soul_admin_router  # type: ignore
+except Exception:
+    soul_admin_router = None  # type: ignore
 
 
 app = FastAPI(title="SoulPulse Backend")
@@ -161,6 +177,13 @@ if two_keys_admin is not None:
     except Exception:
         pass
 
+# Include Soul Admin (settings) if available
+if soul_admin_router is not None:
+    try:
+        app.include_router(soul_admin_router)
+    except Exception:
+        pass
+
 if fine_tune_admin is not None:
     try:
         app.include_router(fine_tune_admin)
@@ -172,6 +195,104 @@ if quant_admin is not None:
         app.include_router(quant_admin)
     except Exception:
         pass
+
+
+# =============================
+# Aux LLM proxy (Phi-4 / llama)
+# =============================
+
+def _aux_base_url() -> str:
+    # Minimal stable default; advanced resolution via DB/ENV can be added if needed
+    return "http://127.0.0.1:3002"
+
+
+@app.get("/api/aux-llm/health")
+async def aux_llm_health() -> Dict[str, Any]:
+    try:
+        req = _url.Request(f"{_aux_base_url()}/health", headers={"Content-Type": "application/json"}, method="GET")
+        with _url.urlopen(req, timeout=1.6) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            body = _json.loads(raw or "{}")
+            ok = bool(isinstance(body, dict) and body.get("status") == "ok")
+            return {"ok": ok, "service": "aux-llm", "response": body}
+    except Exception as e:
+        return {"ok": False, "service": "aux-llm", "error": str(e)}
+
+
+@app.post("/api/aux-llm/completion")
+async def aux_llm_completion(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    # Accepts either llama.cpp completion format {prompt,n_predict,...}
+    # or OpenAI-like {messages:[{role,content}],max_tokens,temperature}
+    try:
+        prompt: Optional[str] = None
+        n_predict: int = int(payload.get("n_predict") or payload.get("max_tokens") or 128)
+        temperature: float = float(payload.get("temperature") or 0.2)
+
+        msgs: Optional[List[Dict[str, Any]]] = payload.get("messages")  # type: ignore[assignment]
+        if isinstance(msgs, list) and msgs:
+            # Simple extraction: use last user message content
+            for m in reversed(msgs):
+                if isinstance(m, dict) and (m.get("role") == "user"):
+                    c = m.get("content")
+                    if isinstance(c, str) and c.strip():
+                        prompt = c.strip()
+                        break
+            if prompt is None and isinstance(msgs[-1], dict):
+                c2 = msgs[-1].get("content")
+                if isinstance(c2, str):
+                    prompt = c2
+
+        if prompt is None:
+            p = payload.get("prompt")
+            if isinstance(p, str):
+                prompt = p
+
+        if not prompt:
+            raise HTTPException(status_code=400, detail="prompt/messages required")
+
+        out_req = {
+            "prompt": prompt,
+            "n_predict": max(1, min(n_predict, 2048)),
+            "temperature": max(0.0, float(temperature)),
+        }
+        req = _url.Request(
+            f"{_aux_base_url()}/completion",
+            data=_json.dumps(out_req).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with _url.urlopen(req, timeout=8.0) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            body = _json.loads(raw or "{}")
+            content: Optional[str] = None
+            if isinstance(body, dict):
+                content = body.get("content") or body.get("response") or None  # tolerant
+            return {"ok": True, "content": content, "raw": body}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"aux completion failed: {e}")
+
+
+@app.post("/v1/chat/completions")
+async def openai_chat_completions(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    # Thin OpenAI-compatible shim that reuses aux_llm_completion logic
+    try:
+        res = await aux_llm_completion(payload)
+        content = (res or {}).get("content")
+        if not isinstance(content, str):
+            content = ""
+        return {
+            "id": f"chatcmpl-soul-{os.getpid()}",
+            "object": "chat.completion",
+            "created": int(__import__("time").time()),
+            "model": str(payload.get("model") or "phi-4"),
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"chat completion failed: {e}")
 
 
 @app.post("/api/admin/fine_tune/debug_include")
