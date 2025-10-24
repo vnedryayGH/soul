@@ -1,0 +1,27 @@
+groups:
+  - name: quant_generation_rules
+    interval: 15s
+    rules:
+      - record: job:quant_gen_latency_ms:p95
+        expr: histogram_quantile(0.95, sum(rate(quant_gen_latency_ms_bucket[5m])) by (le))
+      - alert: QuantGenHighErrorRate
+        expr: sum(increase(quant_gen_requests_total{status="error"}[5m])) / clamp_min(sum(increase(quant_gen_requests_total[5m])), 1) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          description: "High error rate for quant generation in the last 5 minutes."
+  - name: takt_cycle_rules
+    interval: 15s
+    rules:
+      - record: job:takt_cycle_latency_ms:p95
+        expr: histogram_quantile(0.95, sum(rate(takt_cycle_latency_ms_bucket[5m])) by (le))
+      - alert: TaktCycleLatencyHigh
+        expr: job:takt_cycle_latency_ms:p95 > 2500
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          description: "p95 latency of takt cycle exceeds 2.5s."
+
+

@@ -1,0 +1,31 @@
+{
+  "title": "Quant Generation & Takt Cycle",
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "graph",
+      "title": "Quant Gen p95 latency (ms)",
+      "targets": [
+        {"expr": "job:quant_gen_latency_ms:p95"}
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "Takt Cycle p95 latency (ms)",
+      "targets": [
+        {"expr": "job:takt_cycle_latency_ms:p95"}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Quant Gen error rate 5m",
+      "targets": [
+        {"expr": "sum(increase(quant_gen_requests_total{status=\"error\"}[5m])) / clamp_min(sum(increase(quant_gen_requests_total[5m])), 1)"}
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "version": 1
+}
+
+
