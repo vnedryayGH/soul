@@ -1,0 +1,699 @@
+openapi: 3.0.3
+info:
+  title: Soul P62 HR/Finance API v1 (Fragments)
+  version: 1.0.0
+  description: |
+    Спек‑фрагменты OpenAPI для новых HR/Finance маршрутов P62. 
+    Назначение — документирование контрактов (без обязательства реализации в этом коммите).
+servers:
+  - url: /
+tags:
+  - name: hr
+    description: HR entities and processes
+  - name: hr-processes
+    description: HR business process templates and instances
+  - name: finance
+    description: Finance and billing reporting
+  - name: personas
+    description: Personas admin
+components:
+  securitySchemes:
+    telegramHeader:
+      type: apiKey
+      in: header
+      name: X-Telegram-User-ID
+  parameters:
+    XTelegramUserId:
+      name: X-Telegram-User-ID
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Admin header for RBAC scoping
+    CommonId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    ProcessTemplate:
+      type: object
+      required: [key, display_name]
+      properties:
+        id: { type: string, format: uuid, nullable: true }
+        key: { type: string }
+        display_name: { type: string }
+        version: { type: integer, nullable: true }
+        roles: { type: array, items: { type: object } }
+        stages: { type: array, items: { type: object } }
+        sla: { type: object, nullable: true }
+        flags: { type: object, nullable: true }
+        created_at: { type: string, format: date-time, nullable: true }
+    ProcessInstance:
+      type: object
+      required: [template_key, status]
+      properties:
+        id: { type: string, format: uuid }
+        template_key: { type: string }
+        status: { type: string, enum: [created, running, waiting_approval, completed, failed, cancelled] }
+        payload: { type: object }
+        approvals: { type: array, items: { type: object } }
+        assignees: { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+    Position:
+      type: object
+      required: [name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        grade_min: { type: string, nullable: true }
+        grade_max: { type: string, nullable: true }
+        skills_profile_ref: { type: string, nullable: true }
+        kpi_template_ref: { type: string, nullable: true }
+        created_at: { type: string, format: date-time, nullable: true }
+    OrgUnit:
+      type: object
+      required: [name]
+      properties:
+        id: { type: string, format: uuid }
+        parent_id: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        manager_persona_id: { type: string, format: uuid, nullable: true }
+        capacity: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time, nullable: true }
+    Assignment:
+      type: object
+      required: [persona_id, starts_at]
+      properties:
+        id: { type: string, format: uuid }
+        persona_id: { type: string, format: uuid }
+        position_id: { type: string, format: uuid, nullable: true }
+        org_unit_id: { type: string, format: uuid, nullable: true }
+        fte: { type: number, format: float, default: 1.0 }
+        starts_at: { type: string, format: date }
+        ends_at: { type: string, format: date, nullable: true }
+        manager_persona_id: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time, nullable: true }
+    Shift:
+      type: object
+      required: [persona_id]
+      properties:
+        id: { type: string, format: uuid }
+        persona_id: { type: string, format: uuid }
+        recurrence: { type: object, additionalProperties: true }
+        exceptions: { type: array, items: { type: object } }
+        created_at: { type: string, format: date-time, nullable: true }
+    LeaveRequest:
+      type: object
+      required: [persona_id, kind, period]
+      properties:
+        id: { type: string, format: uuid }
+        persona_id: { type: string, format: uuid }
+        kind: { type: string, enum: [paid_leave, unpaid_leave, sick, other] }
+        period: { type: object }
+        approved: { type: boolean, default: false }
+        created_at: { type: string, format: date-time, nullable: true }
+    Trip:
+      type: object
+      required: [persona_id, period]
+      properties:
+        id: { type: string, format: uuid }
+        persona_id: { type: string, format: uuid }
+        purpose: { type: string, nullable: true }
+        period: { type: object }
+        approved: { type: boolean, default: false }
+        created_at: { type: string, format: date-time, nullable: true }
+    KPIEntry:
+      type: object
+      required: [persona_id, period, metrics]
+      properties:
+        id: { type: string, format: uuid }
+        persona_id: { type: string, format: uuid }
+        period: { type: object }
+        metrics: { type: object }
+        created_at: { type: string, format: date-time, nullable: true }
+    PerformanceReview:
+      type: object
+      required: [persona_id, period]
+      properties:
+        id: { type: string, format: uuid }
+        persona_id: { type: string, format: uuid }
+        period: { type: object }
+        score: { type: number, format: float, nullable: true }
+        comments: { type: string, nullable: true }
+        created_at: { type: string, format: date-time, nullable: true }
+    TimesheetRecord:
+      type: object
+      required: [persona_id, period, hours]
+      properties:
+        id: { type: string, format: uuid, nullable: true }
+        persona_id: { type: string, format: uuid }
+        period: { type: object }
+        hours: { type: number, format: float }
+        tags: { type: array, items: { type: string } }
+    PayrollReportResponse:
+      type: object
+      properties:
+        period:
+          type: object
+        totals:
+          type: object
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              persona_id: { type: string, format: uuid }
+              hours: { type: number, format: float }
+              cost: { type: number, format: float }
+              currency: { type: string }
+    ExternalReportResponse:
+      type: object
+      properties:
+        contract_id: { type: string, format: uuid }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              ts: { type: string, format: date-time }
+              persona_id: { type: string, format: uuid }
+              unit: { type: string }
+              qty: { type: number, format: float }
+              rate: { type: number, format: float }
+              cost: { type: number, format: float }
+              currency: { type: string }
+
+paths:
+  /api/admin/hr/process-templates:
+    get:
+      tags: [hr-processes]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: List process templates
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProcessTemplate' }
+                  total: { type: integer }
+    post:
+      tags: [hr-processes]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: Create or register process template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProcessTemplate' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessTemplate' }
+
+  /api/admin/hr/process-templates/{id}:
+    get:
+      tags: [hr-processes]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Get process template
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessTemplate' }
+    put:
+      tags: [hr-processes]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Update process template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProcessTemplate' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessTemplate' }
+    delete:
+      tags: [hr-processes]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Delete process template
+      responses:
+        '200': { description: Deleted }
+
+  /api/admin/hr/process-instances:
+    get:
+      tags: [hr-processes]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: List process instances
+      responses:
+        '200': { description: OK }
+    post:
+      tags: [hr-processes]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: Start process instance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [template_key]
+              properties:
+                template_key: { type: string }
+                payload: { type: object }
+                assignees: { type: array, items: { type: string } }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessInstance' }
+
+  /api/admin/hr/process-instances/{id}:
+    get:
+      tags: [hr-processes]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Get process instance
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessInstance' }
+    delete:
+      tags: [hr-processes]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Cancel process instance
+      responses:
+        '200': { description: Cancelled }
+
+  /api/admin/hr/process-instances/{id}/approve:
+    post:
+      tags: [hr-processes]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Approve current stage (Two-Keys optional by policy)
+      requestBody:
+        required: false
+      responses:
+        '200': { description: Approved }
+
+  /api/admin/hr/process-instances/{id}/advance:
+    post:
+      tags: [hr-processes]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Advance to next stage
+      requestBody:
+        required: false
+      responses:
+        '200': { description: Advanced }
+  /api/admin/hr/positions:
+    get:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: List positions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Position' }
+                  total: { type: integer }
+    post:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: Create position
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Position' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Position' }
+
+  /api/admin/hr/positions/{id}:
+    get:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Get position
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Position' }
+    put:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Update position
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Position' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Position' }
+    delete:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Delete position
+      responses:
+        '200': { description: Deleted }
+
+  /api/admin/hr/org_units:
+    get:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: List org units
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/OrgUnit' }
+                  total: { type: integer }
+    post:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: Create org unit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrgUnit' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrgUnit' }
+
+  /api/admin/hr/org_units/{id}:
+    get:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Get org unit
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrgUnit' }
+    put:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Update org unit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrgUnit' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrgUnit' }
+    delete:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Delete org unit
+      responses:
+        '200': { description: Deleted }
+
+  /api/admin/hr/assignments:
+    get:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: List assignments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Assignment' }
+                  total: { type: integer }
+    post:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: Create assignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Assignment' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Assignment' }
+
+  /api/admin/hr/assignments/{id}:
+    delete:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' }, { $ref: '#/components/parameters/CommonId' } ]
+      summary: Delete assignment
+      responses:
+        '200': { description: Deleted }
+
+  /api/admin/hr/shifts:
+    get:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: List shifts
+      responses:
+        '200':
+          description: OK
+    post:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: Create shift
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Shift' }
+      responses:
+        '200': { description: Created }
+
+  /api/admin/hr/leave:
+    get:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: List leave requests
+      responses:
+        '200': { description: OK }
+    post:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: Create leave request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LeaveRequest' }
+      responses:
+        '200': { description: Created }
+
+  /api/admin/hr/trips:
+    get:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: List trips
+      responses:
+        '200': { description: OK }
+    post:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: Create trip
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Trip' }
+      responses:
+        '200': { description: Created }
+
+  /api/admin/hr/kpi:
+    get:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: List KPI entries
+      responses:
+        '200': { description: OK }
+    post:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: Create KPI entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KPIEntry' }
+      responses:
+        '200': { description: Created }
+
+  /api/admin/hr/performance:
+    get:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: List performance reviews
+      responses:
+        '200': { description: OK }
+    post:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: Create performance review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PerformanceReview' }
+      responses:
+        '200': { description: Created }
+
+  /api/admin/timesheet/record:
+    post:
+      tags: [hr]
+      security: [{ telegramHeader: [] }]
+      parameters: [ { $ref: '#/components/parameters/XTelegramUserId' } ]
+      summary: Submit single timesheet record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TimesheetRecord' }
+      responses:
+        '200': { description: Accepted }
+
+  /api/admin/hr/payroll/report:
+    get:
+      tags: [finance]
+      security: [{ telegramHeader: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/XTelegramUserId' }
+        - in: query
+          name: from
+          required: true
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          required: true
+          schema: { type: string, format: date }
+        - in: query
+          name: persona_id
+          required: false
+          schema: { type: string, format: uuid }
+        - in: query
+          name: org_unit_id
+          required: false
+          schema: { type: string, format: uuid }
+      summary: Payroll aggregates for period
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayrollReportResponse' }
+
+  /api/admin/external/reports:
+    get:
+      tags: [finance]
+      security: [{ telegramHeader: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/XTelegramUserId' }
+        - in: query
+          name: contract_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: from
+          required: false
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          required: false
+          schema: { type: string, format: date }
+      summary: External billing report
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalReportResponse' }
+
+

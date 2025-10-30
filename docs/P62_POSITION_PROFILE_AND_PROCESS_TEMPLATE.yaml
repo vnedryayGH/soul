@@ -1,0 +1,92 @@
+---
+# Пример декларативного профиля позиции (Position Profile)
+kind: position.profile/v1
+metadata:
+  key: accountant_L2
+  display_name: "Бухгалтер (L2)"
+  locale: ru-RU
+spec:
+  grade_range:
+    min: L2
+    max: L3
+  skills_profile:
+    key: skills/accountant_v1
+    required:
+      - "sap.fi.basics"
+      - "ifrs.basics"
+      - "excel.pivot"
+  learning_paths:
+    - key: learn/accountant_fi_intro
+      hours: 12
+    - key: learn/accountant_ifrs_practice
+      hours: 16
+  kpi_template:
+    key: kpi/accountant_v1
+    metrics:
+      - name: "closing_p95_hours"
+        target: 36
+      - name: "error_rate"
+        target: 0.01
+  business_process_templates:
+    - ref: process/onboarding_accountant_v1
+    - ref: process/timesheet_monthly_review_v1
+    - ref: process/payroll_review_v1
+  automation_hooks:
+    - when: "onboarding.completed"
+      dsl: |
+        PROJECT.TASK.ADD title="Подключить к бухгалтерскому реестру" assignee=accounting.manager
+
+---
+# Пример шаблона бизнес‑процесса (Process Template)
+kind: process.template/v1
+metadata:
+  key: process/onboarding_accountant_v1
+  display_name: "Онбординг: Бухгалтер"
+  version: 1
+spec:
+  roles:
+    - key: initiator
+      rbac: ["soul.admin", "hr.manager"]
+    - key: approver
+      rbac: ["finance.manager"]
+  stages:
+    - key: create_persona
+      title: "Создание карточки сотрудника"
+      form:
+        fields:
+          - { name: display_name, type: string, required: true }
+          - { name: org_unit_id, type: uuid, required: true }
+          - { name: position_id, type: uuid, required: true }
+      action:
+        dsl: |
+          HR.PERSONA.CREATE display_name="${display_name}" org_unit_id=${org_unit_id} position_id=${position_id}
+      signatures:
+        require: ["svc.hr.persona.create"]
+    - key: grant_access
+      title: "Выдача доступов"
+      form:
+        fields:
+          - { name: systems, type: string[], required: true }
+      action:
+        dsl: |
+          HR.ACCESS.GRANT persona_id=${persona.id} systems="${systems}"
+      approvals:
+        - role: approver
+          two_keys: true
+      signatures:
+        require: ["svc.hr.access.grant"]
+    - key: finalize
+      title: "Завершение онбординга"
+      action:
+        dsl: |
+          LLM.MIRROR owner=${initiator} branch="main" topic="hr_onboarding" user_command="onboarding finalized" agent_reply="ok"
+      outcomes:
+        - status: success
+          set_flag: hr.onboarding.completed
+
+  sla:
+    target_hours: 48
+  flags:
+    enabled: true
+    visibility: internal
+
