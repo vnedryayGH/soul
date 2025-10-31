@@ -1,0 +1,20 @@
+{
+  "op": "deploy.transfer_orchestrator",
+  "options": {
+    "apply": true,
+    "request": {
+      "project_code": "Telegram_Bot",
+      "branch": "p62-visual-hr",
+      "environment": "prod",
+      "destination": "app1",
+      "components": ["backend", "frontend"],
+      "artifacts": {
+        "backend": { "ref": "p62-visual-hr" },
+        "frontend": { "ref": "p62-visual-hr" }
+      },
+      "database": { "alembic": { "target": "head" } }
+    }
+  }
+}
+
+
