@@ -188,16 +188,21 @@ try:
 except Exception:
     soul_admin_router = None  # type: ignore
 
-# Web Auth router (for web authentication endpoints) — prefer cookie-setting variant
+# Web Auth router (for web authentication endpoints) — prefer local router, then tools cookie variant
 try:
-    from tools.catalog.active.utils.web_auth import router as web_auth_router  # type: ignore
+    from .routers.web_auth import router as web_auth_router  # type: ignore
 except Exception:
     try:
-        from tools.catalog.active.utils.auth import (  # type: ignore
-            web_router as web_auth_router,
+        from tools.catalog.active.utils.web_auth import (  # type: ignore
+            router as web_auth_router,
         )
     except Exception:
-        web_auth_router = None  # type: ignore
+        try:
+            from tools.catalog.active.utils.auth import (  # type: ignore
+                web_router as web_auth_router,
+            )
+        except Exception:
+            web_auth_router = None  # type: ignore
 
 
 app = FastAPI(
