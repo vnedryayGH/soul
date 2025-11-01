@@ -214,9 +214,9 @@ if web_auth_router is None:  # pragma: no cover
         except Exception:
             from backend.app.db import get_db_session as _get_db_session  # type: ignore
         try:
-            from .models import User as _User  # type: ignore
+            from tools.catalog.active.utils.models import User as _User  # type: ignore
         except Exception:
-            from backend.app.models import User as _User  # type: ignore
+            _User = None  # type: ignore
 
         # Helper deps (from tools if available)
         try:
