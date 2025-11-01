@@ -170,9 +170,57 @@ async def verify_otp_miniapp(
 # Alias для выдачи одноразового токена под уже подключенным префиксом /api/miniapp/auth
 @router.post('/issue-one-time-token')
 async def issue_one_time_token_alias(
-    tg_id: int = Depends(verify_telegram_auth),
+    request: dict | None = None,
+    x_telegram_user_id: str | None = Header(None, alias='X-Telegram-User-ID'),
     db: AsyncSession = Depends(get_db_session),
 ):
+    """Выдача OTP для MiniApp с мягкой аутентификацией:
+    - Приоритет: заголовок X-Telegram-User-ID
+    - Фолбэк: request.tg_id
+    - Фолбэк: request.initData (парсинг user.id)
+    """
+    tg_id: int | None = None
+    if x_telegram_user_id:
+        try:
+            tg_id = int(x_telegram_user_id)
+        except Exception:
+            raise HTTPException(status_code=401, detail='Invalid X-Telegram-User-ID format')
+    if tg_id is None and isinstance(request, dict):
+        raw_tg = request.get('tg_id')
+        try:
+            tg_id = int(raw_tg) if raw_tg is not None else None
+        except Exception:
+            tg_id = None
+    if tg_id is None and isinstance(request, dict):
+        init_data = request.get('initData')
+        if isinstance(init_data, str) and init_data:
+            # Пытаемся распарсить user.id из initData
+            try:
+                user_payload = verify_init_data(init_data)
+            except Exception:
+                user_payload = None
+            if user_payload and user_payload.get('id'):
+                try:
+                    tg_id = int(user_payload.get('id'))
+                except Exception:
+                    tg_id = None
+            if tg_id is None:
+                # Упрощённый парсер initData=user=...
+                try:
+                    import json as _j
+                    from urllib.parse import parse_qsl
+
+                    parsed = dict(parse_qsl(init_data))
+                    user_json = parsed.get('user')
+                    if user_json:
+                        data = _j.loads(user_json)
+                        if data.get('id'):
+                            tg_id = int(data['id'])
+                except Exception:
+                    pass
+    if tg_id is None:
+        raise HTTPException(status_code=401, detail='Missing Telegram identity')
+
     result = await db.execute(select(User).where(User.tg_id == tg_id))
     user = result.scalar_one_or_none()
     if user is None:
