@@ -208,6 +208,7 @@ except Exception:
 if web_auth_router is None:  # pragma: no cover
     try:
         from fastapi import APIRouter, Depends, HTTPException, Response  # type: ignore
+        from fastapi.responses import JSONResponse  # type: ignore
         from sqlalchemy import select, text as _sqltext  # type: ignore
         try:
             from .db import get_db_session as _get_db_session  # type: ignore
@@ -318,7 +319,7 @@ if web_auth_router is None:  # pragma: no cover
                     'sub': int(row['tg_id'] or tg_id),
                 }
             )
-            resp = Response(media_type='application/json')
+            resp = JSONResponse({'status': 'success', 'token': token, 'tg_id': _tg, 'user': {'id': _tg, 'first_name': _fn, 'last_name': _ln, 'username': _un}})
             try:
                 resp.set_cookie(
                     key='sp_token',
@@ -332,16 +333,6 @@ if web_auth_router is None:  # pragma: no cover
                 )
             except Exception:
                 pass
-            _fn = str(row.get('first_name') or '')
-            _ln = str(row.get('last_name') or '')
-            _un = str(row.get('username') or '')
-            _tg = int(row.get('tg_id') or tg_id)
-            resp.body = (
-                '{'
-                f'"status":"success","token":"{token}","tg_id":{_tg},'
-                f'"user":{{"id":{_tg},"first_name":"{_fn}","last_name":"{_ln}","username":"{_un}"}}'
-                '}'
-            ).encode()
             return resp
 
         web_auth_router = _wr  # type: ignore
