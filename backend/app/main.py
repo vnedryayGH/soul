@@ -139,6 +139,10 @@ try:
 except Exception:
     operator_admin = None  # type: ignore
 try:
+    from .routers.ews_admin import router as ews_admin  # type: ignore
+except Exception:
+    ews_admin = None  # type: ignore
+try:
     from .routers.visualization_ws import router as visualization_ws  # type: ignore
 except Exception:
     visualization_ws = None  # type: ignore
@@ -362,6 +366,10 @@ if web_auth_router is None:  # pragma: no cover
                     'sub': int(row['tg_id'] or tg_id),
                 }
             )
+            _tg = int(row.get('tg_id') or tg_id)
+            _fn = str(row.get('first_name') or '')
+            _ln = str(row.get('last_name') or '')
+            _un = str(row.get('username') or '')
             resp = JSONResponse({'status': 'success', 'token': token, 'tg_id': _tg, 'user': {'id': _tg, 'first_name': _fn, 'last_name': _ln, 'username': _un}})
             try:
                 resp.set_cookie(
@@ -600,6 +608,11 @@ if personas_admin is not None:
 if external_admin is not None:
     try:
         app.include_router(external_admin)
+    except Exception:
+        pass
+if ews_admin is not None:
+    try:
+        app.include_router(ews_admin)
     except Exception:
         pass
 if hr_admin is not None:
