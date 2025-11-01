@@ -204,6 +204,97 @@ except Exception:
         except Exception:
             web_auth_router = None  # type: ignore
 
+# If all imports failed, define a minimal inline fallback to guarantee route presence
+if web_auth_router is None:  # pragma: no cover
+    try:
+        from fastapi import APIRouter, Depends, HTTPException, Response  # type: ignore
+        from sqlalchemy import select  # type: ignore
+        try:
+            from .db import get_db_session as _get_db_session  # type: ignore
+        except Exception:
+            from backend.app.db import get_db_session as _get_db_session  # type: ignore
+        try:
+            from .models import User as _User  # type: ignore
+        except Exception:
+            from backend.app.models import User as _User  # type: ignore
+
+        # Helper deps (from tools if available)
+        try:
+            from tools.catalog.active.utils.dependencies import (  # type: ignore
+                verify_telegram_auth as _verify_tg,
+            )
+        except Exception as _e_dep:
+            _verify_tg = None  # type: ignore
+
+        try:
+            from tools.catalog.active.utils.auth import (  # type: ignore
+                create_jwt as _create_jwt,
+                generate_time_based_otp as _gen_otp,
+            )
+        except Exception as _e_auth:
+            _create_jwt = None  # type: ignore
+            _gen_otp = None  # type: ignore
+
+        _wr = APIRouter(prefix='/api/web-auth', tags=['web-auth'])
+
+        @_wr.post('/issue-one-time-token')
+        async def _issue_one_time_token(
+            tg_id: int = Depends(_verify_tg) if _verify_tg else 0,  # type: ignore
+            db=_get_db_session(),  # type: ignore
+        ):
+            if _verify_tg is None:
+                raise HTTPException(status_code=500, detail='web_auth_dep_missing')
+            if _gen_otp is None:
+                raise HTTPException(status_code=500, detail='web_auth_helpers_missing')
+            res = await db.execute(select(_User).where(_User.tg_id == tg_id))  # type: ignore
+            user = res.scalar_one_or_none()
+            if user is None:
+                raise HTTPException(status_code=404, detail='User not found')
+            otp = _gen_otp(tg_id, 300)
+            return {'status': 'success', 'otp': otp, 'tg_id': tg_id, 'expires_in': 300}
+
+        @_wr.post('/verify-otp')
+        async def _verify_otp(payload: dict, db=_get_db_session()):  # type: ignore
+            if _create_jwt is None or _gen_otp is None:
+                raise HTTPException(status_code=500, detail='web_auth_helpers_missing')
+            tg_id = payload.get('tg_id')
+            otp = payload.get('otp')
+            if not tg_id or not otp:
+                raise HTTPException(status_code=400, detail='tg_id and otp are required')
+            exp = _gen_otp(tg_id, 300)
+            if otp != exp:
+                raise HTTPException(status_code=401, detail='Invalid or expired OTP')
+            res = await db.execute(select(_User).where(_User.tg_id == tg_id))  # type: ignore
+            user = res.scalar_one_or_none()
+            if user is None:
+                raise HTTPException(status_code=404, detail='User not found')
+            token = _create_jwt({'user_id': user.id, 'web': True, 'tg_id': user.tg_id, 'sub': user.tg_id})
+            resp = Response(media_type='application/json')
+            try:
+                resp.set_cookie(
+                    key='sp_token',
+                    value=token,
+                    max_age=60 * 60 * 12,
+                    httponly=True,
+                    secure=True,
+                    samesite='none',
+                    domain='.soulpulse.art',
+                    path='/',
+                )
+            except Exception:
+                pass
+            resp.body = (
+                '{'
+                f'"status":"success","token":"{token}","tg_id":{int(tg_id)},'
+                f'"user":{{"id":{user.tg_id or 0},"first_name":"{user.first_name or ''}","last_name":"{user.last_name or ''}","username":"{user.username or ''}"}}'
+                '}'
+            ).encode()
+            return resp
+
+        web_auth_router = _wr  # type: ignore
+    except Exception:
+        web_auth_router = None  # type: ignore
+
 
 app = FastAPI(
     title='SoulPulse Backend',
