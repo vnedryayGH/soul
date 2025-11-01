@@ -209,6 +209,11 @@ try:
     from tools.catalog.active.utils.auth import router as miniapp_auth_router  # type: ignore
 except Exception:
     miniapp_auth_router = None  # type: ignore
+if miniapp_auth_router is None:
+    try:
+        from .routers.miniapp_auth import router as miniapp_auth_router  # type: ignore
+    except Exception:
+        miniapp_auth_router = None  # type: ignore
 
 # If all imports failed, define a minimal inline fallback to guarantee route presence
 if web_auth_router is None:  # pragma: no cover
