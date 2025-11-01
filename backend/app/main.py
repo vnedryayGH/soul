@@ -244,6 +244,33 @@ if web_auth_router is None:  # pragma: no cover
             _create_jwt = None  # type: ignore
             _gen_otp = None  # type: ignore
 
+        # Fallback helpers if tools.auth is unavailable
+        def _gen_otp_local(tg: int, ttl: int) -> str:
+            import hmac, hashlib, time
+            secret = os.getenv('OTP_SECRET') or os.getenv('JWT_SECRET') or 'soulpulse-otp'
+            window = int(time.time()) // 30
+            raw = f'{int(tg)}:{window}'.encode('utf-8', 'replace')
+            return hmac.new(secret.encode('utf-8'), raw, hashlib.sha256).hexdigest()[:8].upper()
+
+        def _create_jwt_local(claims: dict) -> str:
+            import datetime as _dt
+            try:
+                import jwt as _pyjwt  # type: ignore
+            except Exception as _e:
+                # Best-effort compact token; not intended for cross-service validation
+                import base64, json as _j
+                b = base64.urlsafe_b64encode(_j.dumps(claims).encode()).decode().rstrip('=')
+                return f'fallback.{b}.token'
+            secret = os.getenv('JWT_SECRET') or 'change-me'
+            payload = dict(claims)
+            payload.setdefault('exp', _dt.datetime.utcnow() + _dt.timedelta(hours=12))
+            return _pyjwt.encode(payload, secret, algorithm='HS256')  # type: ignore
+
+        if _gen_otp is None:
+            _gen_otp = _gen_otp_local  # type: ignore
+        if _create_jwt is None:
+            _create_jwt = _create_jwt_local  # type: ignore
+
         _wr = APIRouter(prefix='/api/web-auth', tags=['web-auth'])
 
         @_wr.post('/issue-one-time-token')
