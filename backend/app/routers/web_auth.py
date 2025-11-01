@@ -69,11 +69,14 @@ async def issue_one_time_token(
 @router.post('/verify-otp')
 async def verify_otp(request: dict, db: AsyncSession = Depends(get_db_session)) -> Response:
     """Проверка OTP и выдача JWT токена + HttpOnly cookie для веб-клиента."""
-    tg_id = request.get('tg_id')
+    tg_id_raw = request.get('tg_id')
     otp = request.get('otp')
-    if not tg_id or not otp:
+    if not tg_id_raw or not otp:
         raise HTTPException(status_code=400, detail='tg_id and otp are required')
-
+    try:
+        tg_id = int(tg_id_raw)
+    except Exception:
+        raise HTTPException(status_code=400, detail='tg_id must be integer')
     expected = generate_time_based_otp(tg_id, 300)
     if otp != expected:
         raise HTTPException(status_code=401, detail='Invalid or expired OTP')
