@@ -225,6 +225,15 @@ if web_auth_router is None:  # pragma: no cover
             )
         except Exception as _e_dep:
             _verify_tg = None  # type: ignore
+        from fastapi import Header as _Header  # type: ignore
+
+        async def _verify_tg_local(x_telegram_user_id: str | None = _Header(default=None)) -> int:  # type: ignore
+            if not x_telegram_user_id or not str(x_telegram_user_id).strip():
+                raise HTTPException(status_code=401, detail='telegram_header_missing')
+            try:
+                return int(str(x_telegram_user_id).strip())
+            except Exception:
+                raise HTTPException(status_code=400, detail='invalid_telegram_id')
 
         try:
             from tools.catalog.active.utils.auth import (  # type: ignore
@@ -239,11 +248,9 @@ if web_auth_router is None:  # pragma: no cover
 
         @_wr.post('/issue-one-time-token')
         async def _issue_one_time_token(
-            tg_id: int = Depends(_verify_tg) if _verify_tg else 0,  # type: ignore
+            tg_id: int = Depends(_verify_tg if _verify_tg else _verify_tg_local),  # type: ignore
             db=Depends(_get_db_session),  # type: ignore
         ):
-            if _verify_tg is None:
-                raise HTTPException(status_code=500, detail='web_auth_dep_missing')
             if _gen_otp is None:
                 raise HTTPException(status_code=500, detail='web_auth_helpers_missing')
             res = await db.execute(select(_User).where(_User.tg_id == tg_id))  # type: ignore
