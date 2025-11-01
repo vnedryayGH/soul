@@ -215,6 +215,28 @@ if miniapp_auth_router is None:
     except Exception:
         miniapp_auth_router = None  # type: ignore
 
+# MiniApp Prompts router
+try:
+    from tools.catalog.active.utils.prompts import router as miniapp_prompts_router  # type: ignore
+except Exception:
+    miniapp_prompts_router = None  # type: ignore
+
+# LLM routers (functions/settings)
+try:
+    from tools.catalog.active.utils.llm_management import router as llm_management_router  # type: ignore
+except Exception:
+    llm_management_router = None  # type: ignore
+try:
+    from tools.catalog.active.utils.llm_settings import router as llm_settings_router  # type: ignore
+except Exception:
+    llm_settings_router = None  # type: ignore
+
+# User management (permissions)
+try:
+    from tools.catalog.active.utils.user_role_management import router as user_mgmt_router  # type: ignore
+except Exception:
+    user_mgmt_router = None  # type: ignore
+
 # If all imports failed, define a minimal inline fallback to guarantee route presence
 if web_auth_router is None:  # pragma: no cover
     try:
@@ -634,6 +656,28 @@ if web_auth_router is not None:
 if 'miniapp_auth_router' in globals() and miniapp_auth_router is not None:
     try:
         app.include_router(miniapp_auth_router)
+    except Exception:
+        pass
+
+# Include MiniApp Prompts
+if 'miniapp_prompts_router' in globals() and miniapp_prompts_router is not None:
+    try:
+        app.include_router(miniapp_prompts_router)
+    except Exception:
+        pass
+
+# Include LLM routers
+for _r in (llm_management_router, llm_settings_router):
+    if _r is not None:
+        try:
+            app.include_router(_r)
+        except Exception:
+            pass
+
+# Include User management (permissions)
+if 'user_mgmt_router' in globals() and user_mgmt_router is not None:
+    try:
+        app.include_router(user_mgmt_router)
     except Exception:
         pass
 
