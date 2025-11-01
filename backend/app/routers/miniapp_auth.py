@@ -23,6 +23,13 @@ except Exception:
     _verify_init_data = None  # type: ignore
     _gen_otp = None  # type: ignore
 
+def _gen_otp_local(tg: int, ttl: int) -> str:
+    import hmac, hashlib, time, os
+    secret = os.getenv('OTP_SECRET') or os.getenv('JWT_SECRET') or 'soulpulse-otp'
+    window = int(time.time()) // 30
+    raw = f'{int(tg)}:{window}'.encode('utf-8', 'replace')
+    return hmac.new(secret.encode('utf-8'), raw, hashlib.sha256).hexdigest()[:8].upper()
+
 
 def _create_jwt_local(claims: dict) -> str:
     import datetime as _dt
@@ -120,5 +127,61 @@ async def verify(
 
     token = (_create_jwt or _create_jwt_local)({'user_id': user_id})  # type: ignore
     return {'token': token, 'user': {'id': user_id, 'tg_id': tg_id, 'first_name': first_name, 'last_name': last_name, 'username': username}}
+
+
+@router.post('/issue-one-time-token')
+async def issue_one_time_token(
+    request: dict | None = None,
+    x_telegram_user_id: str | None = Header(None, alias='X-Telegram-User-ID'),
+    db: AsyncSession = Depends(get_db_session),
+):
+    tg_id: int | None = None
+    if x_telegram_user_id:
+        try:
+            tg_id = int(x_telegram_user_id)
+        except Exception:
+            tg_id = None
+    if tg_id is None and isinstance(request, dict):
+        raw_tg = request.get('tg_id')
+        try:
+            tg_id = int(raw_tg) if raw_tg is not None else None
+        except Exception:
+            tg_id = None
+    if tg_id is None and isinstance(request, dict):
+        init_data = request.get('initData')
+        if isinstance(init_data, str) and init_data:
+            try:
+                user_payload = _verify_init_data(init_data) if _verify_init_data else None
+            except Exception:
+                user_payload = None
+            if user_payload and user_payload.get('id'):
+                try:
+                    tg_id = int(user_payload.get('id'))
+                except Exception:
+                    tg_id = None
+            if tg_id is None:
+                try:
+                    import json as _j
+                    from urllib.parse import parse_qsl
+
+                    parsed = dict(parse_qsl(init_data))
+                    user_json = parsed.get('user')
+                    if user_json:
+                        data = _j.loads(user_json)
+                        if data.get('id'):
+                            tg_id = int(data['id'])
+                except Exception:
+                    pass
+    if tg_id is None:
+        raise HTTPException(status_code=401, detail='Missing Telegram identity')
+
+    res = await db.execute(_sqltext('select id from users where tg_id = :tg limit 1'), {'tg': int(tg_id)})
+    row = res.mappings().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail='User not found')
+
+    gen = _gen_otp or _gen_otp_local
+    otp = gen(int(tg_id), 300)  # type: ignore[arg-type]
+    return {'status': 'success', 'otp': otp, 'tg_id': tg_id, 'expires_in': 300}
 
 
