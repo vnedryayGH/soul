@@ -208,15 +208,13 @@ except Exception:
 if web_auth_router is None:  # pragma: no cover
     try:
         from fastapi import APIRouter, Depends, HTTPException, Response  # type: ignore
-        from sqlalchemy import select  # type: ignore
+        from sqlalchemy import select, text as _sqltext  # type: ignore
         try:
             from .db import get_db_session as _get_db_session  # type: ignore
         except Exception:
             from backend.app.db import get_db_session as _get_db_session  # type: ignore
-        try:
-            from tools.catalog.active.utils.models import User as _User  # type: ignore
-        except Exception:
-            _User = None  # type: ignore
+        # ORM model may be unavailable; fallback to raw SQL via text()
+        _User = None  # type: ignore
 
         # Helper deps (from tools if available)
         try:
@@ -280,9 +278,14 @@ if web_auth_router is None:  # pragma: no cover
         ):
             if _gen_otp is None:
                 raise HTTPException(status_code=500, detail='web_auth_helpers_missing')
-            res = await db.execute(select(_User).where(_User.tg_id == tg_id))  # type: ignore
-            user = res.scalar_one_or_none()
-            if user is None:
+            res = await db.execute(
+                _sqltext(
+                    'select id, tg_id, first_name, last_name, username from users where tg_id = :tg limit 1'
+                ),
+                {'tg': int(tg_id)},
+            )
+            row = res.mappings().first()
+            if row is None:
                 raise HTTPException(status_code=404, detail='User not found')
             otp = _gen_otp(tg_id, 300)
             return {'status': 'success', 'otp': otp, 'tg_id': tg_id, 'expires_in': 300}
@@ -298,11 +301,23 @@ if web_auth_router is None:  # pragma: no cover
             exp = _gen_otp(tg_id, 300)
             if otp != exp:
                 raise HTTPException(status_code=401, detail='Invalid or expired OTP')
-            res = await db.execute(select(_User).where(_User.tg_id == tg_id))  # type: ignore
-            user = res.scalar_one_or_none()
-            if user is None:
+            res = await db.execute(
+                _sqltext(
+                    'select id, tg_id, first_name, last_name, username from users where tg_id = :tg limit 1'
+                ),
+                {'tg': int(tg_id)},
+            )
+            row = res.mappings().first()
+            if row is None:
                 raise HTTPException(status_code=404, detail='User not found')
-            token = _create_jwt({'user_id': user.id, 'web': True, 'tg_id': user.tg_id, 'sub': user.tg_id})
+            token = _create_jwt(
+                {
+                    'user_id': int(row['id']),
+                    'web': True,
+                    'tg_id': int(row['tg_id'] or tg_id),
+                    'sub': int(row['tg_id'] or tg_id),
+                }
+            )
             resp = Response(media_type='application/json')
             try:
                 resp.set_cookie(
@@ -317,10 +332,14 @@ if web_auth_router is None:  # pragma: no cover
                 )
             except Exception:
                 pass
+            _fn = str(row.get('first_name') or '')
+            _ln = str(row.get('last_name') or '')
+            _un = str(row.get('username') or '')
+            _tg = int(row.get('tg_id') or tg_id)
             resp.body = (
                 '{'
-                f'"status":"success","token":"{token}","tg_id":{int(tg_id)},'
-                f'"user":{{"id":{user.tg_id or 0},"first_name":"{user.first_name or ''}","last_name":"{user.last_name or ''}","username":"{user.username or ''}"}}'
+                f'"status":"success","token":"{token}","tg_id":{_tg},'
+                f'"user":{{"id":{_tg},"first_name":"{_fn}","last_name":"{_ln}","username":"{_un}"}}'
                 '}'
             ).encode()
             return resp
