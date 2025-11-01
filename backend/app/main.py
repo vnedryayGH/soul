@@ -240,7 +240,7 @@ if web_auth_router is None:  # pragma: no cover
         @_wr.post('/issue-one-time-token')
         async def _issue_one_time_token(
             tg_id: int = Depends(_verify_tg) if _verify_tg else 0,  # type: ignore
-            db=_get_db_session(),  # type: ignore
+            db=Depends(_get_db_session),  # type: ignore
         ):
             if _verify_tg is None:
                 raise HTTPException(status_code=500, detail='web_auth_dep_missing')
@@ -254,7 +254,7 @@ if web_auth_router is None:  # pragma: no cover
             return {'status': 'success', 'otp': otp, 'tg_id': tg_id, 'expires_in': 300}
 
         @_wr.post('/verify-otp')
-        async def _verify_otp(payload: dict, db=_get_db_session()):  # type: ignore
+        async def _verify_otp(payload: dict, db=Depends(_get_db_session)):  # type: ignore
             if _create_jwt is None or _gen_otp is None:
                 raise HTTPException(status_code=500, detail='web_auth_helpers_missing')
             tg_id = payload.get('tg_id')
