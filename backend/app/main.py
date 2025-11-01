@@ -272,6 +272,16 @@ if web_auth_router is None:  # pragma: no cover
 
         _wr = APIRouter(prefix='/api/web-auth', tags=['web-auth'])
 
+        @_wr.get('/health')
+        async def _web_auth_health(db=Depends(_get_db_session)) -> dict:  # type: ignore
+            try:
+                await db.execute(_sqltext('select 1'))
+                db_ok = True
+            except Exception:
+                db_ok = False
+            mode = 'fallback'
+            return {'status': 'ok', 'db': db_ok, 'router': f'web_auth:{mode}'}
+
         @_wr.post('/issue-one-time-token')
         async def _issue_one_time_token(
             tg_id: int = Depends(_verify_tg if _verify_tg else _verify_tg_local),  # type: ignore

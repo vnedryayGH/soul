@@ -39,6 +39,17 @@ except Exception as _e:  # pragma: no cover
 router = APIRouter(prefix='/api/web-auth', tags=['web-auth'])
 
 
+@router.get('/health')
+async def web_auth_health(db: AsyncSession = Depends(get_db_session)) -> dict:
+    """Простой health для диагностики web-auth: проверка соединения с БД."""
+    try:
+        await db.execute(select(User.id).limit(1))
+        db_ok = True
+    except Exception:
+        db_ok = False
+    return {'status': 'ok', 'db': db_ok, 'router': 'web_auth'}
+
+
 @router.post('/issue-one-time-token')
 async def issue_one_time_token(
     tg_id: int = Depends(verify_telegram_auth),
