@@ -204,6 +204,12 @@ except Exception:
         except Exception:
             web_auth_router = None  # type: ignore
 
+# MiniApp Auth router (tools)
+try:
+    from tools.catalog.active.utils.auth import router as miniapp_auth_router  # type: ignore
+except Exception:
+    miniapp_auth_router = None  # type: ignore
+
 # If all imports failed, define a minimal inline fallback to guarantee route presence
 if web_auth_router is None:  # pragma: no cover
     try:
@@ -616,6 +622,13 @@ if ui_admin is not None:
 if web_auth_router is not None:
     try:
         app.include_router(web_auth_router)
+    except Exception:
+        pass
+
+# Include MiniApp Auth router (verify via initData, health)
+if 'miniapp_auth_router' in globals() and miniapp_auth_router is not None:
+    try:
+        app.include_router(miniapp_auth_router)
     except Exception:
         pass
 
