@@ -665,6 +665,13 @@ if 'miniapp_prompts_router' in globals() and miniapp_prompts_router is not None:
         app.include_router(miniapp_prompts_router)
     except Exception:
         pass
+else:
+    try:
+        from .routers.miniapp_prompts import router as miniapp_prompts_router_local  # type: ignore
+
+        app.include_router(miniapp_prompts_router_local)
+    except Exception:
+        pass
 
 # Include LLM routers
 for _r in (llm_management_router, llm_settings_router):
@@ -673,11 +680,25 @@ for _r in (llm_management_router, llm_settings_router):
             app.include_router(_r)
         except Exception:
             pass
+if llm_management_router is None:
+    try:
+        from .routers.llm_functions_local import router as llm_functions_local  # type: ignore
+
+        app.include_router(llm_functions_local)
+    except Exception:
+        pass
 
 # Include User management (permissions)
 if 'user_mgmt_router' in globals() and user_mgmt_router is not None:
     try:
         app.include_router(user_mgmt_router)
+    except Exception:
+        pass
+else:
+    try:
+        from .routers.user_permissions_local import router as user_permissions_local  # type: ignore
+
+        app.include_router(user_permissions_local)
     except Exception:
         pass
 
