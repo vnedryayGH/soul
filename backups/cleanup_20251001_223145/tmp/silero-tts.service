@@ -1,0 +1,16 @@
+[Unit]
+Description=Silero TTS HTTP
+After=network.target
+
+[Service]
+Type=simple
+Environment=VIRTUAL_ENV=/opt/silero-venv
+Environment=PATH=/opt/silero-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=SILERO_TTS_WEIGHTS=/opt/silero/ru_v3.pt
+WorkingDirectory=/opt/soulpulse/app/Telegram_Bot
+ExecStart=/opt/silero-venv/bin/python3 scripts/silero_server.py --host 127.0.0.1 --port 8088
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

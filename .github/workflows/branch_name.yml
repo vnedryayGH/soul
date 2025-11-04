@@ -1,0 +1,28 @@
+name: Branch name policy
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR branch name against policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${{ github.event.pull_request.head.ref }}"
+          echo "PR head ref: $ref"
+          if [[ "$ref" =~ ^(main|develop|p[0-9]+-.+|feature\/.+|fix\/.+|chore\/.+)$ ]]; then
+            echo "Branch name policy OK"
+          else
+            echo "Branch name '$ref' violates policy" 1>&2
+            exit 1
+          fi
+
+

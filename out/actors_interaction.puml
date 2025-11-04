@@ -1,0 +1,47 @@
+@startuml
+!theme plain
+title Actors — Принципиальная схема взаимодействия
+component "Пользователь (Telegram)\nMobile/Web Telegram" as user_tg
+component "Telegram Platform\nWebhook events" as tg_platform
+component "Mini Chat App\nWeb UI" as mini_chat
+component "Frontend Mini-App\nWeb UI" as frontend
+component "Nginx Edge Proxy\nreverse proxy" as nginx
+component "Backend FastAPI\nAPI/Webhook" as backend
+component "Processor Core\nCORE.PIPELINE" as processor
+component "RS Proxy\nsvc.rs.proxy" as rs_proxy
+component "RS Actors\ngraph.*" as rs_actors
+component "Aux LLM Proxy\nLLM server-side" as aux_llm
+component "LLM Providers\nDeepSeek/GigaChat/..." as llm
+component "SecretsService\nDB: soul_secrets" as secrets
+component "SoulSettingsService\nDB: soul_settings" as settings
+component "Postgres DB\nPostgreSQL" as db
+component "AGE Graph\nApache AGE" as age
+component "Inspectors & Guard\nplanning.enforce / guard.canonical.urls" as inspectors
+component "Incidents\nP50" as incidents
+component "Prometheus\nmetrics" as prom
+component "Grafana\ndashboards" as graf
+component "Hyperloop CLI/API\nP40/P50 DSL" as hyperloop
+user_tg --> tg_platform : messages
+tg_platform --> nginx : webhook
+nginx --> backend : proxy /webhook/telegram
+mini_chat --> nginx : UI requests
+frontend --> nginx : API requests
+nginx --> backend : proxy /api
+backend --> processor : dispatch events
+processor --> rs_proxy : heavy ops
+rs_proxy --> rs_actors : rsbus
+processor --> age : graph ops
+age --> db : extension
+backend --> settings : read
+backend --> secrets : read
+settings --> db : storage
+secrets --> db : storage
+backend --> db : ORM/SQL
+backend --> aux_llm : proxy
+aux_llm --> llm : completion
+backend --> inspectors : checks
+backend --> incidents : incident log
+backend --> prom : metrics
+prom --> graf : visualize
+hyperloop --> backend : execute DSL
+@enduml

@@ -1,0 +1,69 @@
+@startuml
+!theme plain
+title Core DB ERD (baseline)
+hide circle
+entity "user" as user {
+  * id: uuid
+  --
+  telegram_id: bigint
+  name: text
+  role: text
+  created_at: timestamptz
+}
+entity "message" as message {
+  * id: uuid
+  --
+  user_id: uuid
+  content: text
+  meta: jsonb
+  created_at: timestamptz
+}
+entity "quant" as quant {
+  * id: uuid
+  --
+  message_id: uuid
+  type: text
+  payload: jsonb
+  score: numeric
+  created_at: timestamptz
+}
+entity "quant_link" as quant_link {
+  * id: uuid
+  --
+  from_quant_id: uuid
+  to_quant_id: uuid
+  relation_type: text
+  weight: numeric
+  created_at: timestamptz
+}
+entity "soul_settings" as soul_settings {
+  * key: text
+  --
+  value: jsonb
+}
+entity "soul_secrets" as soul_secrets {
+  * key: text
+  --
+  value: bytea
+}
+entity "incidents" as incidents {
+  * id: uuid
+  --
+  severity: text
+  title: text
+  created_at: timestamptz
+}
+entity "incident_events" as incident_events {
+  * id: uuid
+  --
+  incident_id: uuid
+  kind: text
+  detail: jsonb
+  ts: timestamptz
+}
+message::user_id }o--|| user::id
+quant::message_id }o--|| message::id
+quant_link::from_quant_id }o--|| quant::id
+quant_link::to_quant_id }o--|| quant::id
+incident_events::incident_id }o--|| incidents::id
+@enduml

@@ -1,0 +1,25 @@
+@startuml
+!theme plain
+title Квант — принципиальная схема
+class Quant <<entity>> {
+  + id: uuid
+  + type: text
+  + payload: jsonb
+  + score: numeric
+  + createdAt: timestamptz
+}
+class Message <<entity>> {
+  + id: uuid
+  + content: text
+}
+class QuantLink <<entity>> {
+  + id: uuid
+  + fromQuantId: uuid
+  + toQuantId: uuid
+  + relationType: text
+  + weight: numeric
+}
+Message --> Quant : contains
+Quant --> QuantLink : links
+QuantLink --> Quant : to
+@enduml

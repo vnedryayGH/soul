@@ -1,0 +1,31 @@
+@startuml
+!theme plain
+title Inspectors — Обзор и области ответственности
+component "Inspector: planning.enforce\nP40 parity & coverage" as insp_planning
+component "Inspector: guard.canonical.urls\nban hardcoded URLs/ports" as insp_guard_urls
+component "Inspector: neuro_integrity\nP46 integrity checks" as insp_neuro
+component "Inspector: processor.monitoring\nprocessor p95/err" as insp_proc
+component "Inspector: rs.metrics.rules\ndev_connect rules" as insp_rs_rules
+component "Inspector: age.sync.policy\nAGE Sync invariants" as insp_age
+component "Inspector: secrets.policy\npgcrypto/Two-Keys" as insp_secrets
+component "Backend FastAPI App\nservices & endpoints" as backend
+component "Processor Core Pipeline\nCORE.PIPELINE" as processor
+component "Repo: backend/app\nsources" as code_backend
+component "SoulSettingsService\nDB: soul_settings" as settings
+component "SecretsService\nDB: soul_secrets" as secrets
+component "Incidents Service\nincident_events" as incidents
+component "Prometheus\nmetrics" as prom
+component "Grafana\ndashboards" as graf
+insp_planning --> backend : plan coverage
+insp_planning --> processor : links ↔ tasks
+insp_guard_urls --> code_backend : scan banned urls/ports
+insp_neuro --> processor : neuro integrity
+insp_proc --> processor : p95/error_rate
+insp_proc --> prom : scrape rules
+insp_rs_rules --> backend : dev_connect alerts
+insp_rs_rules --> graf : dash panels
+insp_age --> processor : AGE sync policy
+insp_secrets --> secrets : pgcrypto/enforce
+insp_secrets --> settings : master key presence
+backend --> incidents : violations → incidents
+@enduml

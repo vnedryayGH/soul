@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ru" class="sp-theme-dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>SoulPulse Mini v2.1</title>
+    <meta name="version" content="2.1-20250109">
+    <!-- Favicon (устойчиво к кешу) -->
+    <link rel="icon" href="/favicon.ico?v=4" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=4" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=4" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png?v=4" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=4" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="shortcut icon" href="/favicon.ico?v=4" />
+    <!-- Анти-FOUC: скрываем до готовности -->
+    <style>
+      html:not(.sp-ready) body { opacity: 0; }
+      html.sp-ready body { opacity: 1; transition: opacity 200ms ease; }
+    </style>
+    <!-- Стили подключаются через сборку Vite (импорты в main.tsx) -->
+    <script type="module" crossorigin src="/assets/index-B6F0eZV6.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BhPebipm.css">
+  </head>
+  <body class="sp-platform-container">
+    <script>
+      // Быстрый прелоад-скрипт: выставляем платформенный класс и снимаем скрытие
+      (function(){
+        try{
+          var w = window;
+          var wa = w.Telegram && w.Telegram.WebApp;
+          var hasInit = !!(wa && typeof wa.initData === 'string' && wa.initData.length);
+          var hasUser = !!(wa && wa.initDataUnsafe && wa.initDataUnsafe.user && wa.initDataUnsafe.user.id);
+          if (wa && (hasInit || hasUser)) { document.body.classList.add('telegram-mini-app'); }
+          document.documentElement.classList.add('sp-ready');
+          // Метка сборки для DIAG и бейджа
+          try { (window).__SP_BUILD__ = String(Date.now()); } catch(e){}
+        }catch(e){}
+      })();
+    </script>
+    <script>
+      // Ранний WEB-гард отключён: по умолчанию показываем мини-страницу (внутри App)
+      // Дополнительно: если уже на /webauth — ничего не делаем (анти-петля)
+      (function(){
+        try{
+          var path = window.location && window.location.pathname || '';
+          if (path && path.indexOf('/webauth') === 0) { return; }
+          // Ничего не делаем: App сам решит что показать (мини-страницу или основной UI)
+        }catch(e){}
+      })();
+    </script>
+    <script>
+      // РАННИЙ перехватчик критических ошибок (ChunkLoadError/React #31x): единичный перезапуск с cache-bust
+      (function(){
+        try{
+          var tried = null;
+          try{ tried = sessionStorage.getItem('sp_boot_retry'); }catch(e){}
+          function reloadOnce(){
+            try{ if(!sessionStorage.getItem('sp_boot_retry')) sessionStorage.setItem('sp_boot_retry','1'); }catch(e){}
+            try{ var u = new URL(window.location.href); u.searchParams.set('_r', Date.now().toString()); window.location.replace(u.toString()); }catch(e){}
+          }
+          function shouldRetry(msg){
+            if(!msg) return false;
+            var s = String(msg);
+            return (
+              s.indexOf('ChunkLoadError') >= 0 ||
+              s.indexOf('Loading chunk') >= 0 ||
+              s.indexOf('Failed to fetch dynamically imported module') >= 0 ||
+              s.indexOf('Minified React error #') >= 0 ||
+              s.indexOf('invariant=31') >= 0
+            );
+          }
+          window.addEventListener('error', function(e){
+            try{
+              var m = e && (e.message || e.error || '');
+              if(!tried && shouldRetry(m)) reloadOnce();
+            }catch(_){ }
+          });
+          window.addEventListener('unhandledrejection', function(e){
+            try{
+              var m = e && (e.reason && (e.reason.message || e.reason)) || '';
+              if(!tried && shouldRetry(m)) reloadOnce();
+            }catch(_){ }
+          });
+        }catch(_){ }
+      })();
+    </script>
+    <div id="root"></div>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Минимум рантайм‑флагов: всё управляется из кода/БД -->
+    <script>
+      (function(){
+        try{
+          var w = window;
+          if (w.Telegram && w.Telegram.WebApp){
+            var wa = w.Telegram.WebApp;
+            console.log('[index] 🚀 Инициализация Telegram WebApp');
+            
+            // Готовим WebApp
+            if (typeof wa.ready === 'function') {
+              wa.ready();
+              console.log('[index] ✅ WebApp.ready() вызван');
+            }
+            if (typeof wa.expand === 'function') {
+              wa.expand();
+              console.log('[index] ✅ WebApp.expand() вызван');
+            }
+            
+            var u = null;
+            var tgId = null;
+            
+            // Сначала пробуем получить из initDataUnsafe
+            if (wa.initDataUnsafe && wa.initDataUnsafe.user && wa.initDataUnsafe.user.id) {
+              u = wa.initDataUnsafe.user;
+              tgId = String(u.id);
+              console.log('[index] 👤 User из initDataUnsafe:', u);
+            }
+            
+            // Если не получилось - парсим initData
+            if (!u && typeof wa.initData === 'string' && wa.initData.length > 0) {
+              try {
+                console.log('[index] 🔍 Парсим initData:', wa.initData.substring(0, 100) + '...');
+                var usp = new URLSearchParams(wa.initData);
+                var uj = usp.get('user');
+                if (uj) {
+                  u = JSON.parse(uj);
+                  tgId = String(u.id);
+                  console.log('[index] 👤 User из initData:', u);
+                }
+              } catch(e) {
+                console.warn('[index] ❌ Ошибка парсинга initData:', e);
+              }
+            }
+            
+            // Сохраняем данные пользователя
+            if (u && tgId && u.id) {
+              try {
+                sessionStorage.setItem('tg_id', tgId);
+                sessionStorage.setItem('telegram_user', JSON.stringify(u));
+                console.log('[index] ✅ Данные пользователя сохранены:', { id: u.id, username: u.username });
+                
+                // Дополнительная проверка сохранения
+                const savedTgId = sessionStorage.getItem('tg_id');
+                console.log('[index] 🔍 Проверка сохранённого tg_id:', savedTgId);
+              } catch(e) {
+                console.warn('[index] ❌ Ошибка сохранения данных:', e);
+              }
+            } else {
+              console.warn('[index] ⚠️ Данные пользователя не найдены в WebApp API');
+              console.log('[index] 🔍 Детали отладки:');
+              console.log('[index]   - u (user object):', u);
+              console.log('[index]   - tgId:', tgId);
+              console.log('[index]   - u && u.id:', u && u.id);
+              
+              // Попытка прямого доступа к WebApp
+              try {
+                const wa = w.Telegram?.WebApp;
+                console.log('[index] 🔍 Прямой доступ к WebApp:');
+                console.log('[index]   - WebApp:', wa);
+                console.log('[index]   - platform:', wa?.platform);
+                console.log('[index]   - version:', wa?.version);
+                console.log('[index]   - initData длина:', wa?.initData?.length);
+                console.log('[index]   - colorScheme:', wa?.colorScheme);
+                console.log('[index]   - themeParams:', wa?.themeParams);
+              } catch(debugErr) {
+                console.error('[index] ❌ Ошибка отладки WebApp:', debugErr);
+              }
+            }
+          } else {
+            console.log('[index] ℹ️ Telegram WebApp API недоступен');
+          }
+        }catch(e){ 
+          console.error('[index] ❌ TG pre-init failed:', e); 
+        }
+      })();
+    </script>
+  </body>
+</html>

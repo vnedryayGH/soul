@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SoulPulse Mini — Minimal Startup</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <style>
+      html,body{height:100%;margin:0}
+      body{display:flex;align-items:center;justify-content:center;background:#0f172a;color:#e5e7eb;font:14px ui-monospace,monospace}
+      .card{background:#111827;border:1px solid #1f2937;border-radius:12px;padding:16px;min-width:300px;max-width:520px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+      h1{margin:.2rem 0 1rem 0;font-size:18px}
+      .muted{color:#93c5fd}
+      .ok{color:#34d399}
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Minimal стартовый экран</h1>
+      <div id="status" class="ok">UI загружен</div>
+      <pre id="info" class="muted"></pre>
+    </div>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+      (function(){
+        try{
+          var wa = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+          var uid = wa && wa.initDataUnsafe && wa.initDataUnsafe.user ? wa.initDataUnsafe.user.id : null;
+          if (uid) try{ sessionStorage.setItem('tg_id', String(uid)); }catch(e){}
+          document.getElementById('info').textContent = 'wa: ' + String(!!wa) + '\n' + 'tg_id: ' + (uid || 'null') + '\n' + new Date().toISOString();
+        }catch(e){ document.getElementById('status').textContent='Ошибка инициализации';}
+      })();
+    </script>
+  </body>
+  </html>
+
+

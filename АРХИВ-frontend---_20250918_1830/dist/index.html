@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru" class="sp-theme-dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>SoulPulse Mini v2.1</title>
+    <meta name="version" content="2.1-20250109">
+    <!-- Favicon (устойчиво к кешу) -->
+    <link rel="icon" href="/favicon.ico?v=4" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=4" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=4" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png?v=4" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=4" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="shortcut icon" href="/favicon.ico?v=4" />
+    <!-- Анти-FOUC: скрываем до готовности -->
+    <style>
+      html:not(.sp-ready) body { opacity: 0; }
+      html.sp-ready body { opacity: 1; transition: opacity 200ms ease; }
+    </style>
+    <!-- Стили подключаются через сборку Vite (импорты в main.tsx) -->
+    <script type="module" crossorigin src="/assets/index-CK96Y1vO.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-C4ylzfhB.css">
+  </head>
+  <body class="sp-platform-container">
+    <script>
+      // Быстрый прелоад-скрипт: выставляем платформенный класс и снимаем скрытие
+      (function(){
+        try{
+          var isTg = !!(window.Telegram && window.Telegram.WebApp);
+          if (isTg) { document.body.classList.add('telegram-mini-app'); }
+          document.documentElement.classList.add('sp-ready');
+        }catch(e){}
+      })();
+    </script>
+    <div id="root"></div>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+      // Runtime feature flags for safe staged recovery
+      (function(){
+        try{
+          window.__SP_FLAGS__ = Object.assign({}, window.__SP_FLAGS__ || {}, {
+            ENABLE_LAYOUT_HEADER: true,   // Step 1: Header-only layout
+            ENABLE_PERMS: false,          // Step 2: enable later, no redirects
+            PERMS_NO_REDIRECT: true,      // Do not redirect when permissions enabled
+            ROUTES_STAGE: 1,              // 1: Dashboard/Chat → 2: Soul → 3: Admin → 4: Rest
+            SAFE_BOOT: false,
+            NOREACT: false,
+            DIAG: false
+          });
+        }catch(e){ /* noop */ }
+      })();
+    </script>
+    <script>
+      (function(){
+        try{
+          var w = window;
+          if (w.Telegram && w.Telegram.WebApp){
+            var wa = w.Telegram.WebApp;
+            if (typeof wa.ready === 'function') wa.ready();
+            var u = (wa.initDataUnsafe && wa.initDataUnsafe.user) ? wa.initDataUnsafe.user : null;
+            if (!u && typeof wa.initData === 'string' && wa.initData.length){
+              var usp = new URLSearchParams(wa.initData);
+              var uj = usp.get('user');
+              if (uj){ try{ u = JSON.parse(uj); } catch(e){} }
+            }
+            if (u && u.id){
+              sessionStorage.setItem('tg_id', String(u.id));
+              sessionStorage.setItem('telegram_user', JSON.stringify(u));
+            }
+          }
+        }catch(e){ console.warn('[index] TG pre-init failed:', e); }
+      })();
+    </script>
+  </body>
+</html>

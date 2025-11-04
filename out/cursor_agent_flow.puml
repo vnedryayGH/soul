@@ -1,0 +1,18 @@
+@startuml
+!theme plain
+title LLM Агент Cursor — рабочий поток
+participant "User" as user
+participant "Cursor Agent" as agent
+participant "Hyperloop CLI/API" as hyperloop
+participant "Backend" as backend
+participant "Inspectors" as inspect
+participant "Incidents" as inc
+user -> agent: Запрос/задача
+agent -> hyperloop: CLAIM branch / execute DSL
+hyperloop -> backend: /api/hyperloop/execute
+backend -> inspect: INSPECTOR.RUN*
+inspect -> backend: OK/violations
+backend -> inc: incident on violations
+backend -> hyperloop: results/trace_id
+agent -> user: Результат + ссылки
+@enduml

@@ -1,0 +1,8 @@
+{
+  "model": "phi3-mini",
+  "prompt": "Extract keywords: AI systems enable deep learning and hello world demo. Return comma-separated list.",
+  "temperature": 0.2,
+  "max_tokens": 96
+}
+
+

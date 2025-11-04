@@ -1,0 +1,14 @@
+{
+  "ssh_prefs": {
+    "host": "root@mini.soulpulse.art",
+    "key": "deploy/ssh_keys/app_server_key"
+  },
+  "checks_form": {
+    "title": "PostgreSQL version",
+    "env": "prod",
+    "command": "PGHOST=127.0.0.1 PGPORT=5432 PGUSER=miniapp_user PGPASSWORD=*** PGDATABASE=miniapp_db psql -Atc \"select version();\" | cat",
+    "expected": "Версия PostgreSQL",
+    "last_result": "psql: error: connection to server at \"127.0.0.1\", port 5432 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?",
+    "comment": "Применение миграций"
+  }
+}

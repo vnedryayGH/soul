@@ -1,0 +1,87 @@
+name: Offload Smokes (P58/P67)
+
+on:
+  push:
+    branches: [ main, devops/cursor-offload-p58-p48r-2025-10 ]
+    tags: [ '*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  smokes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run Offload CI Aggregator
+        id: run_smokes
+        env:
+          HL_API_URL: https://mini.soulpulse.art/api
+          HL_USER_ID: '468326902'
+          SOUL_AUTH_TOKEN: ${{ secrets.SOUL_AUTH_TOKEN }}
+        run: |
+          python tools/catalog/active/utils/smoke_offload_ci.py > smokes.json || true
+          # Fail if ok!=true; also echo JSON to logs
+          python -c 'import json,sys; d=json.load(open("smokes.json","r",encoding="utf-8")); print(json.dumps(d,ensure_ascii=False)); sys.exit(0 if bool(d.get("ok")) else 1)'
+
+      - name: Gate — INSPECTOR.RUN_ALL (mandatory)
+        env:
+          HL_API_URL: https://mini.soulpulse.art/api
+          HL_USER_ID: '468326902'
+          SOUL_AUTH_TOKEN: ${{ secrets.SOUL_AUTH_TOKEN }}
+        run: |
+          python tools/catalog/active/utils/hyperloop_cli.py --dsl INSPECTOR.RUN_ALL > inspectors.json
+          python -c 'import json,sys; d=json.load(open("inspectors.json","r",encoding="utf-8")); ok=bool(d.get("ok")); print(json.dumps(d,ensure_ascii=False)); sys.exit(0 if ok else 1)'
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offload-smokes-${{ github.run_id }}
+          path: |
+            smokes.json
+
+      - name: Append summary to job
+        if: always()
+        run: |
+          echo "### Offload Smokes Summary" >> $GITHUB_STEP_SUMMARY
+          echo "Smokes:" >> $GITHUB_STEP_SUMMARY
+          cat smokes.json >> $GITHUB_STEP_SUMMARY || true
+          echo "\nInspectors (Gate):" >> $GITHUB_STEP_SUMMARY
+          cat inspectors.json >> $GITHUB_STEP_SUMMARY || true
+
+      - name: Update Release Notes (if tagged)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ASSET_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          TAG="${GITHUB_REF#refs/tags/}"
+          SMOKES=$(cat smokes.json | jq -c .)
+          INSP=$(cat inspectors.json | jq -c .)
+          # Aggregate lightweight metrics
+          OK=$(echo "$SMOKES" | jq -r '.ok')
+          ITEMS=$(echo "$SMOKES" | jq -r '.summary.hyperloop.items.derived_status // {}')
+          P_OK=$(echo "$ITEMS" | jq -r '.project_ok // false')
+          PL_OK=$(echo "$ITEMS" | jq -r '.planning_ok // false')
+          PIPE_OK=$(echo "$ITEMS" | jq -r '.pipeline_ok // false')
+          BODY=$'\n\n### Offload Smokes Summary\n' \
+            $'Status: '"$OK"$'\n' \
+            $'Project.LIST: '"$P_OK"$'\n' \
+            $'Planning Enforce: '"$PL_OK"$'\n' \
+            $'Pipeline Gate: '"$PIPE_OK"$'\n' \
+            $'Artifacts: '"$ASSET_URL"$'\n'
+          gh release edit "$TAG" --notes "$BODY"
+
+

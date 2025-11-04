@@ -1,0 +1,8 @@
+{
+  "model": "phi3-mini",
+  "prompt": "Translate to English: Привет, мир!",
+  "temperature": 0.2,
+  "max_tokens": 64
+}
+
+

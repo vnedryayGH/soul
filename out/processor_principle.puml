@@ -1,0 +1,20 @@
+@startuml
+!theme plain
+title Processor — Принципиальная схема работы
+participant "Inbound Event" as event
+participant "Backend Router" as router
+participant "Processor Core" as proc
+participant "AGE Graph" as age
+participant "RS Proxy" as rs
+participant "DB" as db
+participant "Incidents" as inc
+event -> router: /webhook or /api call
+router -> proc: Dispatch(event)
+proc -> db: Load settings/secrets
+proc -> age: Graph read/write (agtype)
+proc -> rs: Offload heavy graph.*
+rs -> proc: Result or fallback
+proc -> db: Persist quants/messages
+proc -> inc: Violations → incident
+proc -> router: Response
+@enduml

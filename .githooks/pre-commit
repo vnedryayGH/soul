@@ -1,0 +1,25 @@
+#!/bin/sh
+# Guard: prohibit file deletions in the repo (except explicit allowlist)
+# Works on staged changes only
+
+set -e
+
+# Allowlist for deletions (regex, paths relative to repo root)
+ALLOW_RE="^\\.githooks/|^tmp/|^Server-TMP/|^backups/|^\\.gitignore$"
+
+# Collect deleted paths from the index
+DELETED_LINES=$(git diff --cached --name-status | awk '$1=="D"{print $2}') || true
+
+if [ -n "$DELETED_LINES" ]; then
+  # Filter out allowed paths
+  PROHIBITED=$(printf "%s\n" "$DELETED_LINES" | grep -Ev "$ALLOW_RE" || true)
+  if [ -n "$PROHIBITED" ]; then
+    echo "ERROR: Deletions are prohibited in this repository." 1>&2
+    echo "Blocked deleted files:" 1>&2
+    printf "%s\n" "$PROHIBITED" 1>&2
+    echo "If this is part of an approved incident workflow, temporarily disable the hook via core.hooksPath and re-enable after." 1>&2
+    exit 1
+  fi
+fi
+
+exit 0
