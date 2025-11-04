@@ -25,8 +25,8 @@ import urllib.request as _url
 from typing import Any
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 _DBG = str(os.getenv('DIAGNOSTIC_VISIBLE_REPLY', '')).strip().lower() in {'1', 'true', 'yes', 'on'}
@@ -117,6 +117,14 @@ except Exception:
     quant_admin = None  # type: ignore
 
 from .routers.hyperloop_admin import router as hyperloop_admin  # type: ignore
+try:
+    from .routers.inspectors_summary import router as inspectors_summary  # type: ignore
+except Exception:
+    inspectors_summary = None  # type: ignore
+try:
+    from .routers.macros_router import router as macros_router  # type: ignore
+except Exception:
+    macros_router = None  # type: ignore
 
 try:
     from .routers.personas_admin import router as personas_admin  # type: ignore
@@ -142,6 +150,10 @@ try:
     from .routers.ews_admin import router as ews_admin  # type: ignore
 except Exception:
     ews_admin = None  # type: ignore
+try:
+    from .routers.tools_execute import router as tools_execute  # type: ignore
+except Exception:
+    tools_execute = None  # type: ignore
 try:
     from .routers.visualization_ws import router as visualization_ws  # type: ignore
 except Exception:
@@ -179,6 +191,18 @@ try:
     from tools.catalog.active.admin.gendarme_admin import router as gendarme_admin  # type: ignore
 except Exception:
     gendarme_admin = None  # type: ignore
+
+# Optional Skills admin router (skills import/list)
+try:
+    from tools.catalog.active.admin.skills_admin import router as skills_admin  # type: ignore
+except Exception:
+    skills_admin = None  # type: ignore
+    # Fallback to local backend adapter if available
+    if skills_admin is None:
+        try:
+            from .routers.skills_admin import router as skills_admin  # type: ignore
+        except Exception:
+            skills_admin = None  # type: ignore
 
 # Fallback local proxy for Gendarme admin router
 try:
@@ -225,28 +249,41 @@ try:
 except Exception:
     miniapp_prompts_router = None  # type: ignore
 
+# MiniApp Profile (tools) — dev endpoints; plus local alias for prod paths
+try:
+    from tools.catalog.active.utils.profile import router as miniapp_profile_tools  # type: ignore
+except Exception:
+    miniapp_profile_tools = None  # type: ignore
+
 # LLM routers (functions/settings)
 try:
-    from tools.catalog.active.utils.llm_management import router as llm_management_router  # type: ignore
+    from tools.catalog.active.utils.llm_management import (
+        router as llm_management_router,  # type: ignore
+    )
 except Exception:
     llm_management_router = None  # type: ignore
 try:
-    from tools.catalog.active.utils.llm_settings import router as llm_settings_router  # type: ignore
+    from tools.catalog.active.utils.llm_settings import (
+        router as llm_settings_router,  # type: ignore
+    )
 except Exception:
     llm_settings_router = None  # type: ignore
 
 # User management (permissions)
 try:
-    from tools.catalog.active.utils.user_role_management import router as user_mgmt_router  # type: ignore
+    from tools.catalog.active.utils.user_role_management import (
+        router as user_mgmt_router,  # type: ignore
+    )
 except Exception:
     user_mgmt_router = None  # type: ignore
 
 # If all imports failed, define a minimal inline fallback to guarantee route presence
 if web_auth_router is None:  # pragma: no cover
     try:
-        from fastapi import APIRouter, Depends, HTTPException, Response  # type: ignore
+        from fastapi import APIRouter, Depends, HTTPException  # type: ignore
         from fastapi.responses import JSONResponse  # type: ignore
-        from sqlalchemy import select, text as _sqltext  # type: ignore
+        from sqlalchemy import text as _sqltext
+
         try:
             from .db import get_db_session as _get_db_session  # type: ignore
         except Exception:
@@ -274,6 +311,8 @@ if web_auth_router is None:  # pragma: no cover
         try:
             from tools.catalog.active.utils.auth import (  # type: ignore
                 create_jwt as _create_jwt,
+            )
+            from tools.catalog.active.utils.auth import (
                 generate_time_based_otp as _gen_otp,
             )
         except Exception as _e_auth:
@@ -282,7 +321,10 @@ if web_auth_router is None:  # pragma: no cover
 
         # Fallback helpers if tools.auth is unavailable
         def _gen_otp_local(tg: int, ttl: int) -> str:
-            import hmac, hashlib, time
+            import hashlib
+            import hmac
+            import time
+
             secret = os.getenv('OTP_SECRET') or os.getenv('JWT_SECRET') or 'soulpulse-otp'
             window = int(time.time()) // 30
             raw = f'{int(tg)}:{window}'.encode('utf-8', 'replace')
@@ -290,11 +332,14 @@ if web_auth_router is None:  # pragma: no cover
 
         def _create_jwt_local(claims: dict) -> str:
             import datetime as _dt
+
             try:
                 import jwt as _pyjwt  # type: ignore
             except Exception as _e:
                 # Best-effort compact token; not intended for cross-service validation
-                import base64, json as _j
+                import base64
+                import json as _j
+
                 b = base64.urlsafe_b64encode(_j.dumps(claims).encode()).decode().rstrip('=')
                 return f'fallback.{b}.token'
             secret = os.getenv('JWT_SECRET') or 'change-me'
@@ -370,7 +415,14 @@ if web_auth_router is None:  # pragma: no cover
             _fn = str(row.get('first_name') or '')
             _ln = str(row.get('last_name') or '')
             _un = str(row.get('username') or '')
-            resp = JSONResponse({'status': 'success', 'token': token, 'tg_id': _tg, 'user': {'id': _tg, 'first_name': _fn, 'last_name': _ln, 'username': _un}})
+            resp = JSONResponse(
+                {
+                    'status': 'success',
+                    'token': token,
+                    'tg_id': _tg,
+                    'user': {'id': _tg, 'first_name': _fn, 'last_name': _ln, 'username': _un},
+                }
+            )
             try:
                 resp.set_cookie(
                     key='sp_token',
@@ -412,11 +464,15 @@ def _is_p62_path(path: str) -> bool:
 
 @app.exception_handler(RequestValidationError)
 async def _p62_validation_handler(request: Request, exc: RequestValidationError):  # type: ignore
-    if _is_p62_path(getattr(request, 'url', type('U', (), {'path': ''})) .path):
+    if _is_p62_path(getattr(request, 'url', type('U', (), {'path': ''})).path):
         # Map validation to 400 with unified payload
         return JSONResponse(
             status_code=400,
-            content={'code': 'validation_error', 'message': 'Invalid request', 'details': exc.errors()},
+            content={
+                'code': 'validation_error',
+                'message': 'Invalid request',
+                'details': exc.errors(),
+            },
         )
     # Fallback to default-like structure for other routes
     return JSONResponse(status_code=422, content={'detail': exc.errors()})
@@ -424,7 +480,7 @@ async def _p62_validation_handler(request: Request, exc: RequestValidationError)
 
 @app.exception_handler(StarletteHTTPException)
 async def _p62_http_handler(request: Request, exc: StarletteHTTPException):  # type: ignore
-    if _is_p62_path(getattr(request, 'url', type('U', (), {'path': ''})) .path):
+    if _is_p62_path(getattr(request, 'url', type('U', (), {'path': ''})).path):
         msg = exc.detail if isinstance(exc.detail, str) else 'HTTP error'
         body: dict[str, object] = {'code': f'http_{exc.status_code}', 'message': msg}
         if not isinstance(exc.detail, str):
@@ -432,6 +488,7 @@ async def _p62_http_handler(request: Request, exc: StarletteHTTPException):  # t
         return JSONResponse(status_code=exc.status_code, content=body)
     # Default-like response for other routes
     return JSONResponse(status_code=exc.status_code, content={'detail': exc.detail})
+
 
 # === Start Gendarme scheduler on startup (nightly/interval-based) ===
 try:
@@ -530,6 +587,16 @@ if hyperloop_admin is not None:
         app.include_router(hyperloop_admin)
     except Exception:
         pass
+if macros_router is not None:
+    try:
+        app.include_router(macros_router)
+    except Exception:
+        pass
+if inspectors_summary is not None:
+    try:
+        app.include_router(inspectors_summary)
+    except Exception:
+        pass
 if agent_exec_admin is not None:
     try:
         app.include_router(agent_exec_admin)
@@ -559,6 +626,24 @@ if gendarme_admin is not None:
 elif 'gendarme_admin_proxy' in globals() and gendarme_admin_proxy is not None:
     try:
         app.include_router(gendarme_admin_proxy)
+    except Exception:
+        pass
+
+# Include Skills Admin if available
+if skills_admin is not None:
+    try:
+        app.include_router(skills_admin)
+    except Exception:
+        pass
+
+# Include Skills Quick Admin (quick buttons/run)
+try:
+    from .routers.skills_quick_admin import router as skills_quick_admin  # type: ignore
+except Exception:
+    skills_quick_admin = None  # type: ignore
+if skills_quick_admin is not None:
+    try:
+        app.include_router(skills_quick_admin)
     except Exception:
         pass
 
@@ -615,11 +700,23 @@ if ews_admin is not None:
         app.include_router(ews_admin)
     except Exception:
         pass
+if tools_execute is not None:
+    try:
+        app.include_router(tools_execute)
+    except Exception:
+        pass
 if hr_admin is not None:
     try:
         app.include_router(hr_admin)
     except Exception:
         pass
+# Public HR endpoints for frontend (without admin RBAC)
+try:
+    from .routers.hr_public import router as hr_public  # type: ignore
+
+    app.include_router(hr_public)
+except Exception:
+    pass
 if routines_admin is not None:
     try:
         app.include_router(routines_admin)
@@ -658,6 +755,28 @@ if ui_admin is not None:
     except Exception:
         pass
 
+# Include UI public flags (Telegram RBAC)
+try:
+    from .routers.ui_public import router as ui_public  # type: ignore
+except Exception:
+    ui_public = None  # type: ignore
+if ui_public is not None:
+    try:
+        app.include_router(ui_public)
+    except Exception:
+        pass
+
+# Include Operator public proxy/actions (Telegram RBAC: architect)
+try:
+    from .routers.operator_public import router as operator_public  # type: ignore
+except Exception:
+    operator_public = None  # type: ignore
+if operator_public is not None:
+    try:
+        app.include_router(operator_public)
+    except Exception:
+        pass
+
 # Include Web Auth router (for web authentication endpoints)
 if web_auth_router is not None:
     try:
@@ -685,6 +804,164 @@ else:
         app.include_router(miniapp_prompts_router_local)
     except Exception:
         pass
+
+# Include MiniApp Profile routers (tools dev + local prod alias). If imports fail, inline minimal fallbacks
+if 'miniapp_profile_tools' in globals() and miniapp_profile_tools is not None:
+    try:
+        app.include_router(miniapp_profile_tools)
+    except Exception:
+        pass
+else:
+    # try local dev router if available
+    try:
+        from .routers.miniapp_profile_alias import router as miniapp_profile_alias  # type: ignore
+
+        app.include_router(miniapp_profile_alias)
+    except Exception:
+        pass
+
+# Inline fallback for MiniApp Profile (GET/POST /api/miniapp/profile)
+try:
+    from fastapi import APIRouter as _APIRouter_inline  # type: ignore
+    from fastapi import Header as _Header_inline
+    from sqlalchemy import text as _sql_inline  # type: ignore
+
+    try:
+        from .db import get_db_session as _get_db_session_inline  # type: ignore
+    except Exception:
+        from backend.app.db import get_db_session as _get_db_session_inline  # type: ignore
+
+    _prof = _APIRouter_inline(prefix='/api/miniapp/profile', tags=['profile'])
+
+    @_prof.get('/')
+    async def _miniapp_profile_get(
+        x_telegram_user_id: str | None = _Header_inline(None, alias='X-Telegram-User-ID'),
+        db=Depends(_get_db_session_inline),  # type: ignore
+    ) -> dict:
+        if not x_telegram_user_id:
+            raise HTTPException(status_code=401, detail='Missing X-Telegram-User-ID header')
+        try:
+            tg = int(x_telegram_user_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail='Invalid tg id')
+        r = await db.execute(
+            _sql_inline('select id from users where tg_id=:tg limit 1'), {'tg': tg}
+        )
+        u = r.mappings().first()
+        if not u:
+            raise HTTPException(status_code=404, detail='User not found')
+        await db.execute(
+            _sql_inline(
+                'insert into user_profiles (user_id, timezone, created_at, updated_at)\n'
+                'select :uid, :tz, now(), now() where not exists (select 1 from user_profiles where user_id=:uid)'
+            ),
+            {'uid': int(u['id']), 'tz': 'Europe/Moscow'},
+        )
+        await db.commit()
+        pr = (
+            await db.execute(
+                _sql_inline('select * from user_profiles where user_id=:uid limit 1'),
+                {'uid': int(u['id'])},
+            )
+        ).mappings().first() or {}
+        return {
+            'ok': True,
+            'profile': {
+                'id': pr.get('id'),
+                'user_id': pr.get('user_id'),
+                'display_name': pr.get('display_name'),
+            },
+        }
+
+    @_prof.post('/')
+    async def _miniapp_profile_post(
+        payload: dict,
+        x_telegram_user_id: str | None = _Header_inline(None, alias='X-Telegram-User-ID'),
+        db=Depends(_get_db_session_inline),  # type: ignore
+    ) -> dict:
+        if not x_telegram_user_id:
+            raise HTTPException(status_code=401, detail='Missing X-Telegram-User-ID header')
+        tg = int(x_telegram_user_id)
+        u = (
+            (
+                await db.execute(
+                    _sql_inline('select id from users where tg_id=:tg limit 1'), {'tg': tg}
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if not u:
+            raise HTTPException(status_code=404, detail='User not found')
+        uid = int(u['id'])
+        await db.execute(
+            _sql_inline(
+                'insert into user_profiles (user_id, created_at, updated_at) select :uid, now(), now() where not exists (select 1 from user_profiles where user_id=:uid)'
+            ),
+            {'uid': uid},
+        )
+        fields = {
+            k: v
+            for k, v in (payload or {}).items()
+            if k
+            in {
+                'display_name',
+                'bio',
+                'gender',
+                'location',
+                'timezone',
+                'phone_number',
+                'email',
+                'nickname',
+                'age',
+                'profession',
+            }
+        }
+        if fields:
+            sets = ', '.join([f'{k} = :{k}' for k in fields.keys()]) + ', updated_at = now()'
+            await db.execute(
+                _sql_inline(f'update user_profiles set {sets} where user_id=:uid'),
+                {**fields, 'uid': uid},
+            )
+            await db.commit()
+        pr = (
+            await db.execute(
+                _sql_inline('select * from user_profiles where user_id=:uid limit 1'), {'uid': uid}
+            )
+        ).mappings().first() or {}
+        return {
+            'ok': True,
+            'profile': {
+                'id': pr.get('id'),
+                'user_id': pr.get('user_id'),
+                'display_name': pr.get('display_name'),
+            },
+        }
+
+    app.include_router(_prof)
+except Exception:
+    pass
+
+# Voice router (inline minimal)
+try:
+    from fastapi import APIRouter as _APIRouter_voice  # type: ignore
+
+    _voice = _APIRouter_voice(prefix='/api/voice', tags=['voice'])
+
+    @_voice.get('/voices')
+    async def _voices_list() -> dict:
+        return {
+            'items': [
+                {'key': 'mira', 'name': 'Mira', 'provider': 'local', 'lang': 'ru-RU'},
+                {'key': 'alloy', 'name': 'Alloy', 'provider': 'openai', 'lang': 'en-US'},
+                {'key': 'amber', 'name': 'Amber', 'provider': 'openai', 'lang': 'en-US'},
+                {'key': 'verse', 'name': 'Verse', 'provider': 'deepseek', 'lang': 'en-US'},
+            ]
+        }
+
+    app.include_router(_voice)
+except Exception:
+    pass
 
 # Include LLM routers
 for _r in (llm_management_router, llm_settings_router):
@@ -715,9 +992,22 @@ else:
     except Exception:
         pass
 
+# Attention Buffer router (P68)
+try:
+    from .routers.attention_router import router as attention_router  # type: ignore
+except Exception:
+    attention_router = None  # type: ignore
+if attention_router is not None:
+    try:
+        app.include_router(attention_router)
+    except Exception:
+        pass
+
 # Public incidents metrics and processor dashboard (if available)
 try:
-    from tools.catalog.active.utils.incidents_public import router as incidents_public  # type: ignore
+    from tools.catalog.active.utils.incidents_public import (
+        router as incidents_public,  # type: ignore
+    )
 except Exception:
     incidents_public = None  # type: ignore
 if incidents_public is not None:
@@ -1130,6 +1420,67 @@ async def debug_include_router():
     return {'ok': False, 'attempts': attempts}
 
 
+@app.post('/api/admin/personas/debug_include')
+async def debug_include_personas_router():
+    """Попытаться (пере)подключить personas_admin router в рантайме.
+
+    Пробуем несколько вариантов импортов, как в fine_tune/debug_include.
+    """
+    attempts: list[dict] = []
+    for mod_name in (
+        'app.routers.personas_admin',
+        'backend.app.routers.personas_admin',
+    ):
+        rec: dict = {'module': mod_name, 'ok': False}
+        try:
+            m = importlib.import_module(mod_name)
+            r = getattr(m, 'router', None)
+            if r is not None:
+                try:
+                    app.include_router(r)
+                except Exception as ie:
+                    rec['include_error'] = repr(ie)
+                else:
+                    rec['ok'] = True
+                    attempts.append(rec)
+                    return {'ok': True, 'attempts': attempts}
+            else:
+                rec['error'] = 'no router attr'
+        except Exception as e:
+            rec['import_error'] = repr(e)
+        attempts.append(rec)
+    return {'ok': False, 'attempts': attempts}
+
+
+@app.post('/api/admin/macros/debug_include')
+async def debug_include_macros_router():
+    """Попытаться (пере)подключить macros_router в рантайме (как для fine_tune/personas)."""
+    attempts: list[dict] = []
+    for mod_name in (
+        'app.routers.macros_router',
+        'backend.app.routers.macros_router',
+    ):
+        rec: dict = {'module': mod_name, 'ok': False}
+        try:
+            m = importlib.import_module(mod_name)
+            r = getattr(m, 'router', None)
+            if r is not None:
+                try:
+                    app.include_router(r)
+                except Exception as ie:
+                    rec['include_error'] = repr(ie)
+                else:
+                    rec['ok'] = True
+                    attempts.append(rec)
+                    return {'ok': True, 'attempts': attempts}
+            else:
+                rec['error'] = 'no router attr'
+        except Exception as e:
+            rec['import_error'] = repr(e)
+        attempts.append(rec)
+    return {'ok': False, 'attempts': attempts}
+
+
 @app.get('/api/metrics')
 async def metrics_json():
     try:
@@ -1351,3 +1702,277 @@ async def admin_rs_report_p95(
         'rsbus_latency_ms': _merge(bus_q, bus_sc),
     }
     return {'ok': True, 'summary': summary, 'cached': False}
+
+
+def _load_page_registry() -> dict[str, dict[str, Any]]:
+    """Загружает реестр страниц из snapshot или парсит registry.ts."""
+    import json as _j
+    import re
+
+    registry_map: dict[str, dict[str, Any]] = {}
+
+    # Пробуем сначала snapshot
+    try:
+        _here = os.path.abspath(os.path.dirname(__file__))
+        _repo_root = os.path.abspath(os.path.join(_here, '..', '..'))
+        snapshot_path = os.path.join(_repo_root, 'out', 'routes_registry_snapshot.json')
+        if os.path.exists(snapshot_path):
+            with open(snapshot_path, 'r', encoding='utf-8') as f:
+                data = _j.load(f)
+                items = data.get('items', []) if isinstance(data, dict) else []
+                for item in items:
+                    key = item.get('key', '')
+                    path = item.get('path', '')
+                    if key:
+                        registry_map[key.lower()] = item
+                    if path:
+                        # Также маппинг по пути (без ведущего /)
+                        path_key = path.lstrip('/').lower()
+                        if path_key:
+                            registry_map[path_key] = item
+    except Exception:
+        pass
+
+    # Fallback: парсим registry.ts напрямую
+    if not registry_map:
+        try:
+            _here = os.path.abspath(os.path.dirname(__file__))
+            _repo_root = os.path.abspath(os.path.join(_here, '..', '..'))
+            registry_path = os.path.join(_repo_root, 'frontend', 'src', 'pages', 'registry.ts')
+            if os.path.exists(registry_path):
+                with open(registry_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    # Парсим записи PAGE_REGISTRY
+                    for match in re.finditer(
+                        r"\{\s*key:\s*['\"]([^'\"]+)['\"][^}]*path:\s*['\"]([^'\"]+)['\"][^}]*\}",
+                        content,
+                        re.MULTILINE | re.DOTALL,
+                    ):
+                        key = match.group(1)
+                        path = match.group(2)
+                        registry_map[key.lower()] = {'key': key, 'path': path}
+                        path_key = path.lstrip('/').lower()
+                        if path_key:
+                            registry_map[path_key] = {'key': key, 'path': path}
+        except Exception:
+            pass
+
+    # Минимальный fallback на случай отсутствия snapshot/registry.ts на сервере
+    # Позволяет работать /api/debug/{page_key} для ключевых страниц
+    if not registry_map:
+        fallback_map: dict[str, dict[str, Any]] = {}
+        for k, p in [
+            ('telegramhome', '/'),
+            ('webauth', '/webauth'),
+            ('register', '/register'),
+            ('miniappchat', '/chat'),
+            ('realtimevoicechat', '/realtime-voice'),
+            ('prompts', '/prompts'),
+            ('settings', '/settings'),
+            ('llmsettings', '/llm-settings'),
+            ('phisettings', '/phi-settings'),
+            ('keywords', '/keywords'),
+            ('datesremindersv2', '/dates-reminders'),
+            ('payments', '/payments'),
+            ('help', '/help'),
+            ('telegramchat', '/telegram-chat'),
+            ('chatmanagement', '/chat-management'),
+            ('grafanalauncher', '/grafana'),
+            ('architectpanel', '/architect'),
+            ('rbacadmin', '/rbac-admin'),
+            ('souldashboard', '/soul/dashboard'),
+            ('soulcity', '/soul/city'),
+            ('soulcity3d', '/soul/city3d'),
+            ('soulgoals', '/soul/goals'),
+            ('activitygoalsintegration', '/soul/activities-goals'),
+            ('souloptimization', '/soul/optimization'),
+            ('soulvisualization', '/soul/visualization'),
+            ('soullogs', '/soul/logs'),
+            ('adminpanel', '/admin'),
+            ('systemsettings', '/admin/settings'),
+            ('securitydashboard', '/security'),
+            ('securityevents', '/security/events'),
+            ('securityredteam', '/security/red-team'),
+            ('rsdashboard', '/rs/dashboard'),
+            ('incidentslist', '/incidents'),
+            ('incidentdetails', '/incidents/:id'),
+            ('trace', '/trace'),
+            ('llmparams', '/llm-params'),
+            ('timesheetlist', '/hr/timesheets'),
+            ('payrollreport', '/hr/payroll'),
+            ('allpages', '/all-pages'),
+            ('remindershistory', '/reminders'),
+            ('voiceadmin', '/admin/voice'),
+            ('permissiondemo', '/permission-demo'),
+            ('soulquants', '/soul/quants'),
+            ('botcontrol', '/admin/bot-control'),
+            ('gendarmePanel'.lower(), '/admin/gendarme'),
+            ('uiformsregistry', '/admin/ui/forms'),
+            ('resilienceadmin', '/admin/resilience'),
+            ('architectmonitoring', '/architect/monitoring'),
+            ('weblanding', '/landing'),
+            ('home', '/home'),
+        ]:
+            fallback_map[k] = {'key': k, 'path': p}
+            path_key = p.lstrip('/').lower()
+            if path_key:
+                fallback_map[path_key] = {'key': k, 'path': p}
+        registry_map.update(fallback_map)
+
+    return registry_map
+
+
+# Debug helper: redirect to City3D test URL with bypass and optional tg_id in main query
+@app.get('/api/debug/city3d', include_in_schema=False)
+async def debug_city3d(tg_id: str | None = None, bypass: bool = True, simple: bool = True):  # type: ignore[valid-type]
+    q: list[str] = []
+    forced_tg = tg_id or '999999'
+    try:
+        q.append(f'tg_id={int(str(forced_tg).strip())}')
+    except Exception:
+        q.append(f'tg_id={str(forced_tg).strip()}')
+    if bypass:
+        q.append('bypass=1')
+    qs = ('?' + '&'.join(q)) if q else ''
+    tail = []
+    if simple:
+        tail.append('simple=1')
+    if bypass:
+        tail.append('bypass=1')
+    hash_q = ('?' + '&'.join(tail)) if tail else ''
+    url = f'/{qs}#/soul/city3d{hash_q}'
+    return RedirectResponse(url=url, status_code=307)
+
+
+# Обобщённый debug эндпоинт для любой страницы из реестра
+@app.get('/api/debug/{page_key}', include_in_schema=False)
+async def debug_page(
+    page_key: str,
+    tg_id: str | None = None,
+    bypass: bool = True,
+    simple: bool = True,
+):  # type: ignore[valid-type]
+    """Редирект на страницу из реестра с bypass и optional tg_id."""
+    registry = _load_page_registry()
+    page_lower = page_key.lower()
+    page_def = registry.get(page_lower)
+
+    if not page_def:
+        raise HTTPException(status_code=404, detail=f'page "{page_key}" not found in registry')
+
+    target_path = page_def.get('path', '/')
+    # Убираем ведущий / из path для hash
+    hash_path = target_path.lstrip('/')
+
+    q: list[str] = []
+    forced_tg = tg_id or '999999'
+    try:
+        q.append(f'tg_id={int(str(forced_tg).strip())}')
+    except Exception:
+        q.append(f'tg_id={str(forced_tg).strip()}')
+    if bypass:
+        q.append('bypass=1')
+    qs = ('?' + '&'.join(q)) if q else ''
+    tail = []
+    if simple:
+        tail.append('simple=1')
+    if bypass:
+        tail.append('bypass=1')
+    hash_q = ('?' + '&'.join(tail)) if tail else ''
+    url = f'/{qs}#/{hash_path}{hash_q}'
+    return RedirectResponse(url=url, status_code=307)
+
+
+# Health эндпоинты для страниц
+try:
+    from sqlalchemy.ext.asyncio import AsyncSession  # type: ignore
+
+    try:
+        from .db import get_db_session  # type: ignore
+    except Exception:
+        from backend.app.db import get_db_session  # type: ignore
+except Exception:
+    AsyncSession = object  # type: ignore
+
+    def get_db_session():  # type: ignore
+        raise NotImplementedError('DB session unavailable')
+
+
+@app.get('/api/{page_key}/health', include_in_schema=False)
+async def page_health(page_key: str, db: AsyncSession = Depends(get_db_session)) -> dict[str, Any]:  # type: ignore[valid-type]
+    """Health check для страницы: проверяет зависимости (required_api, health_check)."""
+    registry = _load_page_registry()
+    page_lower = page_key.lower()
+    page_def = registry.get(page_lower)
+
+    if not page_def:
+        return {'status': 'error', 'message': f'page "{page_key}" not found in registry'}
+
+    health_status: dict[str, Any] = {
+        'status': 'ok',
+        'page': page_key,
+        'path': page_def.get('path', ''),
+    }
+
+    # Проверяем required_api (минимальная проверка доступности)
+    required_apis = page_def.get('required_api', [])
+    if required_apis:
+        api_statuses = []
+        for api_spec in required_apis[:5]:  # Ограничиваем проверки
+            method = api_spec.get('method', 'GET')
+            path = api_spec.get('path', '')
+            try:
+                # Простая проверка HEAD/GET
+                req_method = 'HEAD' if method == 'GET' else 'GET'
+                base_url = os.getenv('BASE_URL', 'https://mini.soulpulse.art')
+                full_url = f'{base_url.rstrip("/")}{path}'
+                req = _url.Request(full_url, method=req_method)
+                req.add_header('User-Agent', 'page-health/1.0')
+                with _url.urlopen(req, timeout=3.0) as resp:
+                    api_statuses.append(
+                        {
+                            'method': method,
+                            'path': path,
+                            'status': resp.getcode(),
+                            'ok': 200 <= resp.getcode() < 300,
+                        }
+                    )
+            except Exception as e:
+                api_statuses.append(
+                    {
+                        'method': method,
+                        'path': path,
+                        'status': 'error',
+                        'ok': False,
+                        'error': str(e),
+                    }
+                )
+        health_status['required_api'] = api_statuses
+        # Если есть ошибки в критичных API, меняем статус
+        if any(not s.get('ok') for s in api_statuses):
+            health_status['status'] = 'degraded'
+
+    # Проверяем health_check endpoint (если указан)
+    health_check_path = page_def.get('health_check', '')
+    if health_check_path:
+        try:
+            base_url = os.getenv('BASE_URL', 'https://mini.soulpulse.art')
+            full_url = f'{base_url.rstrip("/")}{health_check_path}'
+            req = _url.Request(full_url, method='GET')
+            req.add_header('User-Agent', 'page-health/1.0')
+            with _url.urlopen(req, timeout=3.0) as resp:
+                health_status['health_check'] = {
+                    'path': health_check_path,
+                    'status': resp.getcode(),
+                    'ok': 200 <= resp.getcode() < 300,
+                }
+        except Exception as e:
+            health_status['health_check'] = {
+                'path': health_check_path,
+                'status': 'error',
+                'ok': False,
+                'error': str(e),
+            }
+            health_status['status'] = 'degraded'
+
+    return health_status
