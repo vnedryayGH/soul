@@ -1,4 +1,0 @@
-ADMIN_HOST=localhost
-ADMIN_USER=postgres
-ADMIN_DB=miniapp_db
-PGPASSWORD=Abc12345_QwErTy_2025!

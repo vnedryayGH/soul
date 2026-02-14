@@ -1,5 +1,0 @@
-{
-  "commands": "INCIDENT.CREATE title=\"IdemTest\" severity=3 priority=3 source=\"hyperloop\" payload={\\\"meta\\\":{\\\"demo\\\":\\\"1\\\"}} dedupe_key=foo123 WITH TRACE"
-}
-
-

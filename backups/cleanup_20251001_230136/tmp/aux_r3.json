@@ -1,8 +1,0 @@
-{
-  "model": "phi3-mini",
-  "prompt": "Detect main emotion: Мне очень радостно и спокойно. Return one word in English.",
-  "temperature": 0.2,
-  "max_tokens": 32
-}
-
-
