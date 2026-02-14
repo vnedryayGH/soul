@@ -1,6 +1,0 @@
-{
-  "ssh_prefs": {
-    "host": "root@mini.soulpulse.art",
-    "key": "deploy/ssh_keys/app_server_key"
-  }
-}
