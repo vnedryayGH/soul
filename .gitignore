@@ -1,0 +1,9 @@
+# Local dev environment (restored/generated, not tracked)
+.venv/
+backend/
+frontend/
+*.pyc
+__pycache__/
+.env
+.env.*
+!.env.example
